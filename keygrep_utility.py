@@ -127,7 +127,7 @@ class NumericOpen():
                 break
             except FileExistsError:
                 i += 1
-                self.target_name = os.path.join("{}-{}{}".format(basename, i, ext))
+                self.target_name = os.path.join(f"{basename}-{i}{ext}".format(basename, i, ext))
 
         return self.file_handle
 

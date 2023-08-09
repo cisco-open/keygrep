@@ -236,8 +236,8 @@ class KeyChain():
     def correlate_keys(self):
         """Compare discovered public and private keys."""
 
-        for index_pubkey,pubkey in enumerate(self.public_keys):
-            for index_privkey, privkey in enumerate(self.private_keys):
+        for pubkey in self.public_keys:
+            for index_privkey,privkey in enumerate(self.private_keys):
                 if privkey['pub'] is not None:
                     if keygrep_utility.remove_comment(privkey['pub'].strip()) == keygrep_utility.remove_comment(pubkey['pub'].strip()):
                         self.private_keys[index_privkey]["pubkey_locations"] = pubkey["pubkey_locations"]
