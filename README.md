@@ -85,3 +85,25 @@ From this, we could guess that the key found in the output of a ps command (in
 an environment variable) might get us into the host defined in
 terraform.tfvars.json. The discovered keys are also been extracted and stored
 in individual files in findings/private, ready for use with `ssh -i`.
+
+[jq](https://jqlang.github.io/jq/) is recommended for parsing
+private.json. For example, you might want to list only the discovered
+private keys for which public keys were also discovered:
+```
+jq -r '.[] | select(.pubkey_locations | length > 0) | {sha256: .sha256, pubkey_locations: .pubkey_locations, privkey_locations: .privkey_locations}' < findings/private.json
+```
+
+This will produce more compact output that looks something like this:
+
+```json
+{
+  "sha256": "2048 SHA256:REoRXyGCovWtM87Lb/xUl3MaJQlPqB7SFLmqOBVtQ+k  (RSA)",
+  "pubkey_locations": {
+    "etc/sample-data/plain/some_key.pub": [
+      0
+    ],
+    "etc/sample-data/configs/terraform.tfvars.json": [
+      831
+    ]
+  },
+```

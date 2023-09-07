@@ -1,3 +1,21 @@
+#!/usr/bin/env python3
+# Copyright 2023 Cisco Systems, Inc. and its affiliates
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+# SPDX-License-Identifier: Apache-2.0
+"""KeyChain class for Keygrep"""
+
 import os
 import re
 import mmap
@@ -19,7 +37,7 @@ class KeyChain():
 
         # Strip this prefix from the found_in_path field
         # This makes sure it ends with a path separator
-        self.path_prefix_pattern = re.compile(r"^{}".format(os.path.join(os.path.normpath(os.path.expanduser(path_prefix)), "")))
+        self.path_prefix_pattern = re.compile(rf"^{os.path.join(os.path.normpath(os.path.expanduser(path_prefix)), '')}")
 
         # Broadest working definition of "potentially mangled but seemingly complete private key"
         self.private_key_pattern = re.compile(r"-{5}BEGIN(.{1,12})PRIVATE KEY-{5}.{,32768}?-{5}END\1PRIVATE KEY-{5}".encode("utf-8"), re.DOTALL)
@@ -43,15 +61,15 @@ class KeyChain():
         os.makedirs(self.output_dir, mode=0o700, exist_ok=True)
 
         # Write public key JSON output
-        with open(os.path.join(self.output_dir, "public.json"), "w") as outf:
+        with open(os.path.join(self.output_dir, "public.json"), "w", encoding='utf-8') as outf:
             outf.write(json.dumps(self.public_keys, indent=4))
 
         # Write private key JSON output
-        with open(os.path.join(self.output_dir, "private.json"), "w") as outf:
+        with open(os.path.join(self.output_dir, "private.json"), "w", encoding='utf-8') as outf:
             outf.write(json.dumps(self.private_keys, indent=4))
 
         # Write private key CSV output
-        with open(os.path.join(self.output_dir, "private.csv"), "w") as outf:
+        with open(os.path.join(self.output_dir, "private.csv"), "w", encoding='utf-8') as outf:
             key_writer = csv.writer(outf, delimiter=',', quotechar='"', quoting=csv.QUOTE_MINIMAL)
             key_writer.writerow(["Encrypted", "sha256", "md5", "public key", "number of places private key found", "number of places public key found"])
             for key in self.private_keys:
@@ -69,7 +87,9 @@ class KeyChain():
 
         for key in self.public_keys:
             # Use the lexically first filename where the key was found
-            with keygrep_utility.NumericOpen(sorted(key['pubkey_locations'].keys())[0], os.path.join(self.output_dir, "public"), mode="x") as key_out:
+            with keygrep_utility.NumericOpen(sorted(key['pubkey_locations']\
+                                            .keys())[0], os.path.join(\
+                                            self.output_dir, "public"), mode="x") as key_out:
                 key_out.write(key.get('pub'))
                 key_out.write("\n")
 
@@ -183,7 +203,8 @@ class KeyChain():
         key = key.strip() + "\n"
         found_in_path = re.sub(self.path_prefix_pattern, "", found_in_path)
 
-        logging.info("Found key of length %d in %s at position %d", len(key), found_in_path, position)
+        logging.info("Found key of length %d in %s at position %d", len(key),\
+                     found_in_path, position)
 
         with tempfile.NamedTemporaryFile(mode='w') as key_file:
             key_file.write(key)
@@ -200,7 +221,9 @@ class KeyChain():
             # What if the key really was encrypted with an empty passphrase?
             encrypted = False
 
-            keygen_process = subprocess.run(["ssh-keygen", "-P", "", "-y", "-f", key_file.name], stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
+            keygen_process = subprocess.run(["ssh-keygen", "-P", "", "-y", "-f",\
+                                             key_file.name], stdout=subprocess.PIPE,\
+                                             stderr=subprocess.PIPE, check=False)
             # ssh-keygen(1) doesn't provide informative return codes, so parse stderr (ew)
             if "incorrect passphrase" in str(keygen_process.stderr):
                 encrypted = True
@@ -221,7 +244,9 @@ class KeyChain():
                 self.private_keys[index_existing_key]["privkey_locations"].update({found_in_path: existing_key["privkey_locations"].get(found_in_path, []) + [position]})
                 # Remove duplicated positions from keys loaded a second time (from
                 # both a state file and a path)
-                self.private_keys[index_existing_key]["privkey_locations"][found_in_path] = sorted(list(set(self.private_keys[index_existing_key]["privkey_locations"][found_in_path])))
+                self.private_keys[index_existing_key]["privkey_locations"]\
+                    [found_in_path] = sorted(list(set(self.private_keys\
+                    [index_existing_key]["privkey_locations"][found_in_path])))
 
                 # Since we found this key already, bail out instead of
                 # appending a duplicate key
@@ -244,5 +269,5 @@ class KeyChain():
 
                 # Unique the discovered public key locations, or each
                 # "instance" of a private key will result in a duplicate entry
-                for k, v in self.private_keys[index_privkey]["pubkey_locations"].items():
-                    self.private_keys[index_privkey]["pubkey_locations"][k] = sorted(list(set(v)))
+                for path, offset in self.private_keys[index_privkey]["pubkey_locations"].items():
+                    self.private_keys[index_privkey]["pubkey_locations"][path] = sorted(list(set(offset)))
