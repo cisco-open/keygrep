@@ -24,22 +24,35 @@ import subprocess
 import unicodedata
 
 
-def squeeze(string, char):
-    """Replace multiple consecutive instances of a character with a single
-    one."""
-    # https://stackoverflow.com/questions/42216559/fastest-way-to-deduplicate-contiguous-characters-in-string-python
-    if string.find(char*2) != -1:
-        return squeeze(string.replace(char*2, char), char)
-    return string
-
 def walk(path, func):
-    """Run the given function against each file path discovered under the
+    """Run the given function against each file discovered under the
     provided path."""
-    for dirpath, dirnames, filenames in os.walk(path):
-        for fname in filenames:
-            if os.path.islink(os.path.join(dirpath, fname)):
-                continue
-            func(os.path.join(dirpath, fname))
+
+    # Follow symlinks if specifically provided
+    if os.path.isfile(path):
+        func(path)
+    else:
+        for dirpath, _, filenames in os.walk(path):
+            for fname in filenames:
+                if os.path.islink(os.path.join(dirpath, fname)):
+                    continue
+                func(os.path.join(dirpath, fname))
+
+def is_key_encrypted(path):
+    """Return true if the key at given path is encrypted. False otherwise."""
+
+    # Try to generate a public key from the private key temporary file using an empty passphrase
+    # If this fails, the key is either encrypted or malformed
+    # Note that ssh-keygen may also check "key.pub" if you ask it for the
+    # fingerprint of the encrypted key "key".
+    # What if the key really was encrypted with an empty passphrase?
+    keygen_process = subprocess.run(["ssh-keygen", "-P", "", "-y", "-f", path],
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
+
+    # ssh-keygen(1) doesn't provide informative return codes, so parse stderr (ew)
+    if "incorrect passphrase" in str(keygen_process.stderr):
+        return True
+    return False
 
 def get_pubkey_data(path):
     """Return a tuple of the SHA256 and MD5 fingerprints of the file containing
@@ -63,7 +76,7 @@ def get_key_data(path):
     try:
         sha256_fpr = subprocess.check_output(["ssh-keygen", "-P", "", "-l", "-f", path], stderr=subprocess.DEVNULL).strip()
         md5_fpr = subprocess.check_output(["ssh-keygen", "-P", "", "-E", "md5", "-l", "-f", path], stderr=subprocess.DEVNULL).strip()
-        pub = subprocess.check_output(["ssh-keygen", "-P", "", "-y", "-f", path], stderr=subprocess.DEVNULL).strip()
+        pub = subprocess.check_output(["ssh-keygen", "-P", "", "-y", "-f", path], stderr=subprocess.DEVNULL)
     except subprocess.CalledProcessError:
         return (None, None, None)
 
@@ -91,7 +104,7 @@ def safe_filename(unsafe_name, max_len=255, safety_margin=12):
     """Sanitizes the input filename and truncates to a maximum length. Assumes a
     system filename length maximum of 255 and leaves an additional 12
     characters for incremented filenames (file-1.jpg, file-2.jpg, etc.) for use
-    with margin for use with incremented filenames in NumericOpen."""
+    with incremented filenames in NumericOpen."""
 
     # URL decode
     name = recursive_decode(unsafe_name)

@@ -20,10 +20,10 @@ import os
 import re
 import mmap
 import tempfile
-import subprocess
 import json
 import csv
 import logging
+import textwrap
 import keygrep_utility
 
 class KeyChain():
@@ -40,7 +40,7 @@ class KeyChain():
         self.path_prefix_pattern = re.compile(rf"^{os.path.join(os.path.normpath(os.path.expanduser(path_prefix)), '')}")
 
         # Broadest working definition of "potentially mangled but seemingly complete private key"
-        self.private_key_pattern = re.compile(r"-{5}BEGIN(.{1,12})PRIVATE KEY-{5}.{,32768}?-{5}END\1PRIVATE KEY-{5}".encode("utf-8"), re.DOTALL)
+        self.private_key_pattern = re.compile(r"-{5}BEGIN(.{1,12})PRIVATE KEY-{5}(.{,32768}?)-{5}END\1PRIVATE KEY-{5}".encode("utf-8"), re.DOTALL)
 
         # The following public key pattern does not attempt to capture ssh key
         # comments, as there's no foolproof way to identify the end of a
@@ -91,7 +91,6 @@ class KeyChain():
                                             .keys())[0], os.path.join(\
                                             self.output_dir, "public"), mode="x") as key_out:
                 key_out.write(key.get('pub'))
-                key_out.write("\n")
 
     def write_private_keys(self):
         """Dump private keys"""
@@ -108,7 +107,6 @@ class KeyChain():
             # Use the lexically first filename where the key was found
             with keygrep_utility.NumericOpen(sorted(key['privkey_locations'].keys())[0], os.path.join(self.output_dir, "private"), mode="x") as key_out:
                 key_out.write(key.get('priv'))
-                key_out.write("\n")
 
     def find_privkeys_in_file(self, path):
         """Find and parse all private keys in the file at path."""
@@ -119,7 +117,7 @@ class KeyChain():
                     key_matches = re.finditer(self.private_key_pattern, txt)
 
                     for key_match in key_matches:
-                        self.parse_private_key(key_match.group(0).decode("utf-8"), path, key_match.start())
+                        self.parse_private_key(key_match, path, key_match.start())
 
                 # Zero length files
                 except ValueError:
@@ -174,37 +172,41 @@ class KeyChain():
 
         self.public_keys.append(key_data)
 
-    def parse_private_key(self, key, found_in_path, position=-1):
+    def parse_private_key(self, full_key, found_in_path, position=-1):
         """Parses a single key block. Performs fix-up transforms to restore
         mangled keys (e.g., when a private key found in an environment
         variable). Calculates fingerprints and appends a dictionary of the
         results to self.private_keys."""
 
-        key = key.replace("\\n", "\n")
-        splitkey = key.split("-----")
-        # Convert spaces to new lines for keys dumped from environment variables
-        splitkey[2] = splitkey[2].replace(" ", "\n")
+        # inner_key is the interior of the -----BEGIN...----- and -----END...----- blocks
+        inner_key = full_key.group(2).decode("utf-8")
 
-        # Re-insert newlines in encrypted, PEM format key headers.
-        # At this point DEK-Info if present still needs repair
-        splitkey[2] = re.sub(":\n", ": ", splitkey[2])
+        # Find and remove headers (Proc-Type, DEK-Info) if present from inner_key
+        # We assume that even for mangled keys, these will end with a (possibly escaped) newline or
+        # other non-escaped whitespace (typically a space), as with keys found in environment variables
+        inner_key = inner_key.replace("\\n", "\n").replace("\\\n", "\n")
+        headers = list(filter(None, re.findall(r"^|\s([a-zA-Z0-9,\-]+: [\S]+)", inner_key, flags=re.M)))
+        inner_key = re.sub(r"^|\s[a-zA-Z0-9,\-]+: \S+", "", inner_key, flags=re.M).strip()
 
-        key = "-----".join(splitkey)
+        # Special logic for viminfo
+        inner_key = re.sub(r'>\d+', '', inner_key)
 
-        # Remove invalid characters.
-        # This method doesn't eliminate '-' characters inside of the key block
-        key = re.sub(r'[^a-zA-Z0-9\-/+=\s,:]', '', key)
-        key = key.replace("\t", "")
-        key = keygrep_utility.squeeze(key, "\n")
+        # Filter invalid characters
+        inner_key = re.sub(r'[^a-zA-Z0-9/+=]', '', inner_key)
 
-        # Two newlines expected after DEK-Info
-        key = re.sub("^(DEK-Info.+?)$", r"\1\n", key, count=1, flags=re.M)
+        # Standardize line length
+        inner_key = "\n".join(textwrap.wrap(inner_key, width=64))
 
-        key = key.strip() + "\n"
+        affixes = (f"-----BEGIN{full_key.group(1).decode('utf-8')}PRIVATE KEY-----",
+                   f"-----END{full_key.group(1).decode('utf-8')}PRIVATE KEY-----")
+
+        # Re-insert headers with correct newlines
+        if len(headers) > 0:
+            key = "\n".join((affixes[0], "\n".join(headers) + "\n", inner_key, affixes[1])) + "\n"
+        else:
+            key = "\n".join((affixes[0], inner_key, affixes[1])) + "\n"
+
         found_in_path = re.sub(self.path_prefix_pattern, "", found_in_path)
-
-        logging.info("Found key of length %d in %s at position %d", len(key),\
-                     found_in_path, position)
 
         with tempfile.NamedTemporaryFile(mode='w') as key_file:
             key_file.write(key)
@@ -213,23 +215,14 @@ class KeyChain():
                 logging.warning("Trying to parse an empty key file from %s", found_in_path)
 
             fprs = keygrep_utility.get_key_data(key_file.name)
+            encrypted = keygrep_utility.is_key_encrypted(key_file.name)
 
-            # Try to generate a public key from the private key temporary file using an empty passphrase
-            # If this fails, the key is either encrypted or malformed
-            # Note that ssh-keygen may also check "key.pub" if you ask it for the
-            # fingerprint of the encrypted key "key".
-            # What if the key really was encrypted with an empty passphrase?
-            encrypted = False
-
-            keygen_process = subprocess.run(["ssh-keygen", "-P", "", "-y", "-f",\
-                                             key_file.name], stdout=subprocess.PIPE,\
-                                             stderr=subprocess.PIPE, check=False)
-            # ssh-keygen(1) doesn't provide informative return codes, so parse stderr (ew)
-            if "incorrect passphrase" in str(keygen_process.stderr):
-                encrypted = True
-                logging.warning("Key found at position %d in %s is encrypted", position, found_in_path)
-            elif keygen_process.returncode != 0:
-                logging.warning("Key found at position %d in %s is mangled", position, found_in_path)
+            if fprs[0]:
+                logging.info("Found key of length %d at position %d in %s", len(key), position, found_in_path)
+            elif encrypted:
+                logging.info("Found encrypted key of length %d at position %d in %s", len(key), position, found_in_path)
+            else:
+                logging.info("Found mangled key of length %d at position %d in %s", len(key), position, found_in_path)
 
         # If the key is not encrypted but we haven't determined the
         # fingerprint, it's mangled

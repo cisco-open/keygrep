@@ -26,9 +26,8 @@ def main():
     """Search specified directories for SSH keys."""
 
     parser = argparse.ArgumentParser(description="""Searches the specified
-    directories for SSH keys and writes a report and all discovered public and
-    private keys to the output directory. Correlate public and private keys.
-    """)
+    directories for public and private SSH keys, correlates them, and writes a report and all discovered
+    keys to the output directory.""")
 
     parser.add_argument("--include_mangled", action="store_true",
                         help="""Include unrecovered "mangled" keys in results.
@@ -39,8 +38,7 @@ def main():
                         may have been redacted or mangled (deliberately or not)
                         beyond keygrep's current parsing capabilities. They
                         might be recoverable by hand. Including this option may
-                        result in invalid key files, so consider this when
-                        feeding into tools like Driftwood.""")
+                        result in invalid key files.""")
 
     # Possible options to consider adding:
     # --only_encrypted (for cracking)
@@ -48,8 +46,8 @@ def main():
     # --only_mangled (for developing the parser and identifying keys that need manual unmangling)
 
     parser.add_argument('-p', metavar='path', action='append', default=[],
-                        help="""Add this path to the list of directories to
-                        search for keys. May be used multiple times.""")
+                        help="""Add this to the list of paths to search for
+                        keys. May be used multiple times.""")
 
     parser.add_argument('-i', metavar='state_file', action='store', default='',
                         help="""Load the keychain object from this file and
