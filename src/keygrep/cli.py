@@ -19,46 +19,44 @@
 import argparse
 import logging
 import pickle
-import keychain
+from keygrep.keychain import KeyChain
 
 
 def main():
     """Search specified directories for SSH keys."""
 
     parser = argparse.ArgumentParser(description="""Searches the specified
-    directories for public and private SSH keys, correlates them, and writes a report and all discovered
-    keys to the output directory.""")
+    directories for public and private SSH keys, correlates them, and writes a
+    report and all discovered keys to the output directory.""")
 
     parser.add_argument("--include_mangled", action="store_true",
                         help="""Include unrecovered "mangled" keys in results.
-                        Without this option, keygrep will ignore discovered
-                        private keys for which the following is true: 1. The
-                        key is not encrypted; and 2. A fingerprint was unable
-                        to be calculated. The keys that are included this way
-                        may have been redacted or mangled (deliberately or not)
-                        beyond keygrep's current parsing capabilities. They
-                        might be recoverable by hand. Including this option may
-                        result in invalid key files.""")
+                        Without this option, keygrep will log and ignore
+                        potentially recoverable private keys that it discovers.
+                        Sometimes these are redacted or malformed example keys
+                        (such as in docs), but they might be recoverable by
+                        hand. Including this option may result in invalid key
+                        files.""")
 
     # Possible options to consider adding:
     # --only_encrypted (for cracking)
     # --only_unencrypted
     # --only_mangled (for developing the parser and identifying keys that need manual unmangling)
 
-    parser.add_argument('-p', metavar='path', action='append', default=[],
+    parser.add_argument("-p", metavar="path", action="append", default=[],
                         help="""Add this to the list of paths to search for
                         keys. May be used multiple times.""")
 
-    parser.add_argument('-i', metavar='state_file', action='store', default='',
+    parser.add_argument("-i", metavar="state_file", action="store", default="",
                         help="""Load the keychain object from this file and
                         write to it on close.""")
 
-    parser.add_argument('-o', metavar='output_directory', action='store',
-                        default='./findings', help="""Store extracted keys and
+    parser.add_argument(metavar="output_directory", dest="out_dir", action="store",
+                        help="""Store extracted keys and
                         report in this directory, overwriting previous output
-                        if any (default: %(default)s).""")
+                        if any.""")
 
-    parser.add_argument('-s', metavar='string', action='store', type=str,
+    parser.add_argument("-s", metavar="string", action="store", type=str,
                         default="", help="""Strip this leading string from the
                         reported key location paths (e.g., if you're searching
                         /tmp/inventory, you might set this to either /tmp or
@@ -75,10 +73,10 @@ def main():
                 findings = pickle.load(inf)
         except FileNotFoundError:
             logging.info("No state file found, creating a new keychain...")
-            findings = keychain.KeyChain(output_dir=args.o, path_prefix=args.s,
+            findings = KeyChain(output_dir=args.out_dir, path_prefix=args.s,
                                          include_mangled=args.include_mangled)
     else:
-        findings = keychain.KeyChain(output_dir=args.o, path_prefix=args.s,
+        findings = KeyChain(output_dir=args.out_dir, path_prefix=args.s,
                                      include_mangled=args.include_mangled)
 
     try:
@@ -91,7 +89,7 @@ def main():
         logging.info("Correlating keys...")
 
         findings.correlate_keys()
-        logging.info("Writing findings to %s", args.o)
+        logging.info("Writing findings to %s", args.out_dir)
         findings.write_summary()
         findings.write_private_keys()
         findings.write_public_keys()
