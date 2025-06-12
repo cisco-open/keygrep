@@ -1,0 +1,13 @@
+[MAIN]
+jobs=4
+unsafe-load-any-extension=no
+persistent=no
+
+[FORMAT]
+expected-line-ending-format=LF
+
+[STRING]
+check-quote-consistency=yes
+
+[MESSAGES CONTROL]
+disable=line-too-long

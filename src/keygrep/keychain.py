@@ -19,16 +19,17 @@
 import os
 import re
 import mmap
-import tempfile
 import json
 import csv
 import logging
 import textwrap
-import keygrep_utility
+from .keygrep_utility import walk, NumericOpen, get_pubkey_data, get_privkey_data, remove_pubkey_comment
+
+__all__ = ["KeyChain"]
 
 class KeyChain():
     """Class containing all discovered keys and derived information."""
-    def __init__(self, output_dir="findings", path_prefix="", include_mangled=False):
+    def __init__(self, output_dir="",  path_prefix="", include_mangled=False):
 
         self.private_keys = []
         self.public_keys = []
@@ -39,41 +40,46 @@ class KeyChain():
         # This makes sure it ends with a path separator
         self.path_prefix_pattern = re.compile(rf"^{os.path.join(os.path.normpath(os.path.expanduser(path_prefix)), '')}")
 
-        # Broadest working definition of "potentially mangled but seemingly complete private key"
-        self.private_key_pattern = re.compile(r"-{5}BEGIN(.{1,12})PRIVATE KEY-{5}(.{,32768}?)-{5}END\1PRIVATE KEY-{5}".encode("utf-8"), re.DOTALL)
+        self.private_key_pattern = re.compile(
+                rb"-{5}BEGIN(.{1,12})PRIVATE KEY-{5}"
+                rb"((?:(?!-{5}BEGIN).){,32768}?)"
+                rb"-{5}END\1PRIVATE KEY-{5}",
+                re.DOTALL
+        )
 
         # The following public key pattern does not attempt to capture ssh key
         # comments, as there's no foolproof way to identify the end of a
         # comment. The 68 character minimum length is the shortest length
         # likely to correspond to a valid key, which is an ed25519 public key.
-        self.public_key_pattern = re.compile(r"ssh-[a-z0-9]{0,7}\s+[a-zA-Z0-9+=/]{68,}".encode("utf-8"))
+        # Upper of limit of 3000 should be sufficient for up to 16384 bit keys
+        self.public_key_pattern = re.compile(r"ssh-[a-z0-9]{0,7}\s+[a-zA-Z0-9+=/]{68,3000}".encode("utf-8"))
 
     def load_public_keys(self, path):
         """Walk path and search text files under it for public keys."""
-        keygrep_utility.walk(os.path.expanduser(path), self.find_pubkeys_in_file)
+        walk(os.path.expanduser(path), self.find_pubkeys_in_file)
 
     def load_private_keys(self, path):
         """Walk path and search text files under it for private keys."""
-        keygrep_utility.walk(os.path.expanduser(path), self.find_privkeys_in_file)
+        walk(os.path.expanduser(path), self.find_privkeys_in_file)
 
     def write_summary(self):
         """Write a summary of private keys found"""
         os.makedirs(self.output_dir, mode=0o700, exist_ok=True)
 
         # Write public key JSON output
-        with open(os.path.join(self.output_dir, "public.json"), "w", encoding='utf-8') as outf:
+        with open(os.path.join(self.output_dir, "public.json"), "w", encoding="utf-8") as outf:
             outf.write(json.dumps(self.public_keys, indent=4))
 
         # Write private key JSON output
-        with open(os.path.join(self.output_dir, "private.json"), "w", encoding='utf-8') as outf:
+        with open(os.path.join(self.output_dir, "private.json"), "w", encoding="utf-8") as outf:
             outf.write(json.dumps(self.private_keys, indent=4))
 
         # Write private key CSV output
-        with open(os.path.join(self.output_dir, "private.csv"), "w", encoding='utf-8') as outf:
-            key_writer = csv.writer(outf, delimiter=',', quotechar='"', quoting=csv.QUOTE_MINIMAL)
-            key_writer.writerow(["Encrypted", "sha256", "md5", "public key", "number of places private key found", "number of places public key found"])
+        with open(os.path.join(self.output_dir, "private.csv"), "w", encoding="utf-8") as outf:
+            key_writer = csv.writer(outf, delimiter=",", quotechar='"', quoting=csv.QUOTE_MINIMAL)
+            key_writer.writerow(["Encrypted", "sha256", "public key", "number of places private key found", "number of places public key found"])
             for key in self.private_keys:
-                key_writer.writerow([key['encrypted'], key['sha256'], key['md5'], key['pub'], sum(len(k) for k in key['privkey_locations'].values()), sum(len(k) for k in key['pubkey_locations'].values())])
+                key_writer.writerow([key["encrypted"], key["sha256"], key["pub"], sum(len(k) for k in key["privkey_locations"].values()), sum(len(k) for k in key["pubkey_locations"].values())])
 
     def write_public_keys(self):
         """Dump public keys"""
@@ -87,31 +93,30 @@ class KeyChain():
 
         for key in self.public_keys:
             # Use the lexically first filename where the key was found
-            with keygrep_utility.NumericOpen(sorted(key['pubkey_locations']\
+            with NumericOpen(sorted(key["pubkey_locations"]\
                                             .keys())[0], os.path.join(\
                                             self.output_dir, "public"), mode="x") as key_out:
-                key_out.write(key.get('pub'))
+                key_out.write(key.get("pub"))
 
     def write_private_keys(self):
         """Dump private keys"""
-
         try:
             for filename in os.listdir(os.path.join(self.output_dir, "private")):
                 os.unlink(os.path.join(self.output_dir, "private", filename))
         except FileNotFoundError:
             pass
 
-        os.makedirs(self.output_dir, mode=0o700, exist_ok=True)
+        os.makedirs(os.path.join(self.output_dir, "private"), mode=0o700, exist_ok=True)
 
         for key in self.private_keys:
             # Use the lexically first filename where the key was found
-            with keygrep_utility.NumericOpen(sorted(key['privkey_locations'].keys())[0], os.path.join(self.output_dir, "private"), mode="x") as key_out:
-                key_out.write(key.get('priv'))
+            with NumericOpen(sorted(key["privkey_locations"].keys())[0], os.path.join(self.output_dir, "private"), mode="x") as key_out:
+                key_out.write(key.get("priv"))
 
     def find_privkeys_in_file(self, path):
         """Find and parse all private keys in the file at path."""
         try:
-            with open(path, 'rb') as inf:
+            with open(path, "rb") as inf:
                 try:
                     txt = mmap.mmap(inf.fileno(), 0, access=mmap.ACCESS_READ)
                     key_matches = re.finditer(self.private_key_pattern, txt)
@@ -129,7 +134,7 @@ class KeyChain():
     def find_pubkeys_in_file(self, path):
         """Find and parse all public keys in the file at path."""
         try:
-            with open(path, 'rb') as inf:
+            with open(path, "rb") as inf:
                 try:
                     txt = mmap.mmap(inf.fileno(), 0, access=mmap.ACCESS_READ)
                     key_matches = re.finditer(self.public_key_pattern, txt)
@@ -145,30 +150,34 @@ class KeyChain():
     def parse_public_key(self, key, found_in_path, position=-1):
         """Parses a single public key block."""
 
-        with tempfile.NamedTemporaryFile(mode='w') as key_file:
-            key_file.write(key)
-            key_file.flush()
-            if os.stat(key_file.name).st_size == 0:
-                logging.warning("Trying to parse an empty key file from %s", found_in_path)
-            # Validate the key
-            if keygrep_utility.get_pubkey_data(key_file.name) == (None, None):
-                return
-
         # Remove path prefix
         found_in_path = re.sub(self.path_prefix_pattern, "", found_in_path)
 
+        key_data = {
+            "pub": key,
+            "sha256": "",
+            "comments": [],
+            "pubkey_locations": {found_in_path: [position]}
+        }
+
+        key_data.update(get_pubkey_data(key))
+
         for index_existing_key,existing_key in enumerate(self.public_keys):
-            if key == existing_key['pub']:
+
+            if key_data["sha256"] == existing_key["sha256"]:
                 self.public_keys[index_existing_key]["pubkey_locations"].update({found_in_path: existing_key["pubkey_locations"].get(found_in_path, []) + [position]})
+
                 # Remove duplicated positions from keys loaded a second time (from
                 # both a state file and a path)
                 self.public_keys[index_existing_key]["pubkey_locations"][found_in_path] = sorted(list(set(self.public_keys[index_existing_key]["pubkey_locations"][found_in_path])))
 
-                # Since we found this key already, bail out instead of
-                # appending a duplicate key
-                return
+                # There should only be at most one new comment in key_data, but the existing key may have multiple
+                for comment in key_data["comments"]:
+                    if comment not in self.public_keys[index_existing_key]["comments"]:
+                        self.public_keys[index_existing_key]["comments"].append(comment)
 
-        key_data = {'pub': key, 'pubkey_locations': {found_in_path: [position]}}
+                # No need to add a new key entry
+                return
 
         self.public_keys.append(key_data)
 
@@ -189,10 +198,10 @@ class KeyChain():
         inner_key = re.sub(r"^|\s[a-zA-Z0-9,\-]+: \S+", "", inner_key, flags=re.M).strip()
 
         # Special logic for viminfo
-        inner_key = re.sub(r'>\d+', '', inner_key)
+        inner_key = re.sub(r">\d+", "", inner_key)
 
         # Filter invalid characters
-        inner_key = re.sub(r'[^a-zA-Z0-9/+=]', '', inner_key)
+        inner_key = re.sub(r"[^a-zA-Z0-9/+=]", "", inner_key)
 
         # Standardize line length
         inner_key = "\n".join(textwrap.wrap(inner_key, width=64))
@@ -206,58 +215,67 @@ class KeyChain():
         else:
             key = "\n".join((affixes[0], inner_key, affixes[1])) + "\n"
 
+        mangled = False
+
+        # Remove path prefix
         found_in_path = re.sub(self.path_prefix_pattern, "", found_in_path)
 
-        with tempfile.NamedTemporaryFile(mode='w') as key_file:
-            key_file.write(key)
-            key_file.flush()
-            if os.stat(key_file.name).st_size == 0:
-                logging.warning("Trying to parse an empty key file from %s", found_in_path)
+        key_data = {
+            "encrypted": False,
+            "sha256": "",
+            "comments": [],
+            "priv": key,
+            "pub": None,
+            "privkey_locations": {found_in_path: [position]},
+            "pubkey_locations": {},
+        }
 
-            fprs = keygrep_utility.get_key_data(key_file.name)
-            encrypted = keygrep_utility.is_key_encrypted(key_file.name)
+        key_data.update(get_privkey_data(key))
 
-            if fprs[0]:
-                logging.info("Found key of length %d at position %d in %s", len(key), position, found_in_path)
-            elif encrypted:
-                logging.info("Found encrypted key of length %d at position %d in %s", len(key), position, found_in_path)
-            else:
-                logging.info("Found mangled key of length %d at position %d in %s", len(key), position, found_in_path)
+        # The key is mangled beyond automatic repair
+        if not key_data["pub"] and not key_data["encrypted"]:
+            mangled = True
 
-        # If the key is not encrypted but we haven't determined the
-        # fingerprint, it's mangled
-        if not self.include_mangled:
-            if encrypted is False and not fprs[0]:
-                return True
+        if not mangled and not key_data["encrypted"]:
+            logging.info("Found key of length %d at position %d in %s", len(key), position, found_in_path)
+        elif not mangled:
+            logging.info("Found encrypted key of length %d at position %d in %s", len(key), position, found_in_path)
+        else:
+            logging.info("Found mangled key of length %d at position %d in %s", len(key), position, found_in_path)
+
+        if mangled and not self.include_mangled:
+            return
 
         for index_existing_key,existing_key in enumerate(self.private_keys):
-            if key == existing_key['priv']:
 
-                # If this is a duplicate key, update the original to include where we found the copy
+            # Compare based on SHA256 excluding any comments
+            if key_data["sha256"] == existing_key["sha256"]:
+
+                # If this is a duplicate key, update the original to include where we found the copy and any new comment
                 self.private_keys[index_existing_key]["privkey_locations"].update({found_in_path: existing_key["privkey_locations"].get(found_in_path, []) + [position]})
-                # Remove duplicated positions from keys loaded a second time (from
-                # both a state file and a path)
+
+                # There should only be at most one new comment in key_data, but the existing key may have multiple
+                for comment in key_data["comments"]:
+                    if comment not in self.private_keys[index_existing_key]["comments"]:
+                        self.private_keys[index_existing_key]["comments"].append(comment)
+
+                # Remove duplicated positions from keys loaded a second time (from both a state file and a path)
                 self.private_keys[index_existing_key]["privkey_locations"]\
                     [found_in_path] = sorted(list(set(self.private_keys\
                     [index_existing_key]["privkey_locations"][found_in_path])))
 
-                # Since we found this key already, bail out instead of
-                # appending a duplicate key
-                return True
-
-        # "pubkey_locations" unknown until correlate_keys()
-        key_data = {'encrypted': encrypted, 'sha256': fprs[0], 'md5': fprs[1], 'priv': key, 'pub': fprs[2], 'privkey_locations': {found_in_path: [position]}, 'pubkey_locations': {}}
+                # No need to add a new key entry
+                return
 
         self.private_keys.append(key_data)
-        return True
 
     def correlate_keys(self):
         """Compare discovered public and private keys."""
 
         for pubkey in self.public_keys:
             for index_privkey,privkey in enumerate(self.private_keys):
-                if privkey['pub'] is not None:
-                    if keygrep_utility.remove_comment(privkey['pub'].strip()) == keygrep_utility.remove_comment(pubkey['pub'].strip()):
+                if privkey["pub"] is not None:
+                    if remove_pubkey_comment(privkey["pub"]) == remove_pubkey_comment(pubkey["pub"]):
                         self.private_keys[index_privkey]["pubkey_locations"] = pubkey["pubkey_locations"]
 
                 # Unique the discovered public key locations, or each

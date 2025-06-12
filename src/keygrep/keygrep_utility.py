@@ -20,12 +20,13 @@ import os
 import urllib
 import urllib.parse
 import re
+import tempfile
 import subprocess
 import unicodedata
 
 
 def walk(path, func):
-    """Run the given function against each file discovered under the
+    """Runs the given function against each file discovered under the
     provided path."""
 
     # Follow symlinks if specifically provided
@@ -38,55 +39,54 @@ def walk(path, func):
                     continue
                 func(os.path.join(dirpath, fname))
 
-def is_key_encrypted(path):
-    """Return true if the key at given path is encrypted. False otherwise."""
+def get_privkey_data(privkey_string):
+    """Returns a dict with the public key and encryption status of the provided
+    private key. If the key is encrypted or malformed, the public key returned
+    will be None."""
 
-    # Try to generate a public key from the private key temporary file using an empty passphrase
-    # If this fails, the key is either encrypted or malformed
-    # Note that ssh-keygen may also check "key.pub" if you ask it for the
-    # fingerprint of the encrypted key "key".
-    # What if the key really was encrypted with an empty passphrase?
-    keygen_process = subprocess.run(["ssh-keygen", "-P", "", "-y", "-f", path],
-        stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
+    key_data = {"encrypted": False, "pub": None, "sha256": "", "comments": []}
 
-    # ssh-keygen(1) doesn't provide informative return codes, so parse stderr (ew)
-    if "incorrect passphrase" in str(keygen_process.stderr):
-        return True
-    return False
+    with tempfile.NamedTemporaryFile(mode="w") as key_file:
+        key_file.write(privkey_string)
+        key_file.flush()
 
-def get_pubkey_data(path):
-    """Return a tuple of the SHA256 and MD5 fingerprints of the file containing
-    a single properly formatted public key at the givenpath. Returns (None,
-    None) on failure."""
+        keygen_process = subprocess.run(["ssh-keygen", "-P", "", "-y", "-f", key_file.name], stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
 
-    try:
-        sha256_fpr = subprocess.check_output(["ssh-keygen", "-l", "-f", path], stderr=subprocess.DEVNULL).strip()
-        md5_fpr = subprocess.check_output(["ssh-keygen", "-E", "md5", "-l", "-f", path], stderr=subprocess.DEVNULL).strip()
-    except subprocess.CalledProcessError:
-        return (None, None)
+        # ssh-keygen(1) doesn't provide informative return codes, so parse stderr (ew)
+        if keygen_process.returncode == 0:
+            key_data["pub"] = keygen_process.stdout.decode("utf-8")
+        elif "incorrect passphrase" in str(keygen_process.stderr).lower():
+            key_data["encrypted"] = True
 
-    return (sha256_fpr.decode('utf-8'), md5_fpr.decode('utf-8'))
+        keygen_process = subprocess.run(["ssh-keygen", "-l", "-f", key_file.name], stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
 
-def get_key_data(path):
-    """Return a tuple of the (SHA256 fingerprint, MD5 fingerprint, generated
-    public key) of the file containing a single properly formatted private key
-    at path that has permissions correctly set to 0600. If the key file is
-    encrypted or not well-formed, returns (None, None, None)."""
+        if keygen_process.returncode == 0:
+            key_data["sha256"] = " ".join(keygen_process.stdout.decode("utf-8").split(" ")[0:2])
+            comment = " ".join(keygen_process.stdout.decode("utf-8").split(" ")[2:-1])
+            if comment not in ["", "no comment"]:
+                key_data["comments"].append(comment)
 
-    try:
-        sha256_fpr = subprocess.check_output(["ssh-keygen", "-P", "", "-l", "-f", path], stderr=subprocess.DEVNULL).strip()
-        md5_fpr = subprocess.check_output(["ssh-keygen", "-P", "", "-E", "md5", "-l", "-f", path], stderr=subprocess.DEVNULL).strip()
-        pub = subprocess.check_output(["ssh-keygen", "-P", "", "-y", "-f", path], stderr=subprocess.DEVNULL)
-    except subprocess.CalledProcessError:
-        return (None, None, None)
+    return key_data
 
-    return (sha256_fpr.decode('utf-8'), md5_fpr.decode('utf-8'), pub.decode('utf-8'))
+def get_pubkey_data(pubkey_string):
+    """Returns a dict with the SHA256 sum (without comments) from the provided
+    public key string."""
 
-def remove_comment(key_string):
-    """Remove comment from a public key."""
-    if key_string.count(" ") < 2:
-        return key_string
-    return " ".join(key_string.split(" ")[0:2])
+    key_data = {"sha256": None}
+
+    with tempfile.NamedTemporaryFile(mode="w") as key_file:
+        key_file.write(pubkey_string)
+        key_file.flush()
+
+        keygen_process = subprocess.run(["ssh-keygen", "-l", "-f", key_file.name], stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
+        if keygen_process.returncode == 0:
+            key_data["sha256"] = " ".join(keygen_process.stdout.decode("utf-8").split(" ")[0:2])
+
+    return key_data
+
+def remove_pubkey_comment(pubkey_string):
+    """Returns the provided public key minus any comment string."""
+    return " ".join(pubkey_string.split(" ")[0:2]).strip()
 
 def recursive_decode(uri):
     """Apply urllib.parse.unquote to uri until it can't be decoded any
@@ -109,16 +109,16 @@ def safe_filename(unsafe_name, max_len=255, safety_margin=12):
     # URL decode
     name = recursive_decode(unsafe_name)
 
-    name = unicodedata.normalize('NFKD', name)
+    name = unicodedata.normalize("NFKD", name)
 
     # Convert slashes into underscores
-    name = re.sub(r'[/\\]', '_', name)
+    name = re.sub(r"[/\\]", "_", name)
 
     # Convert whitespace into dashes
-    name = re.sub(r'[\s]', '-', name)
+    name = re.sub(r"[\s]", "-", name)
 
     # Discard most characters
-    name = re.sub(r'[^a-zA-Z0-9._-]', '', name)
+    name = re.sub(r"[^a-zA-Z0-9._-]", "", name)
 
     root, ext = os.path.splitext(name)
 
@@ -152,7 +152,7 @@ class NumericOpen():
         while True:
             try:
                 # Doesn't check to see if it ultimately succeeded
-                self.file_handle = open(os.path.join(self.path, self.target_name), **self.open_kwargs, encoding='utf-8')
+                self.file_handle = open(os.path.join(self.path, self.target_name), **self.open_kwargs, encoding="utf-8")
                 break
             except FileExistsError:
                 i += 1
@@ -162,4 +162,4 @@ class NumericOpen():
 
     def __exit__(self, exception_type, exception_value, traceback):
         self.file_handle.close()
-        subprocess.Popen(["chmod", "600", os.path.join(self.path, self.target_name)])
+        os.chmod(os.path.join(self.path, self.target_name), 0o600)
