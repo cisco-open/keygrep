@@ -44,25 +44,43 @@ def get_privkey_data(privkey_string):
     private key. If the key is encrypted or malformed, the public key returned
     will be None."""
 
-    key_data = {"encrypted": False, "pub": None, "sha256": "", "comments": []}
+    key_data = {"encrypted": False, "pub": None, "sha256": None, "comments": []}
 
     with tempfile.NamedTemporaryFile(mode="w") as key_file:
         key_file.write(privkey_string)
         key_file.flush()
 
-        keygen_process = subprocess.run(["ssh-keygen", "-P", "", "-y", "-f", key_file.name], stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
+        # Determine if it's encrypted
+        keygen_process = subprocess.run(["ssh-keygen", "-P", "", "-y", "-f", key_file.name], capture_output=True, text=True, check=False)
 
         # ssh-keygen(1) doesn't provide informative return codes, so parse stderr (ew)
         if keygen_process.returncode == 0:
-            key_data["pub"] = keygen_process.stdout.decode("utf-8")
+            key_data["pub"] = keygen_process.stdout
         elif "incorrect passphrase" in str(keygen_process.stderr).lower():
             key_data["encrypted"] = True
 
-        keygen_process = subprocess.run(["ssh-keygen", "-l", "-f", key_file.name], stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
+            # If the key is encrypted and is OpenSSH formatted (not PEM/PKCS8), we
+            # can obtain the public key from it through a two-step conversion.
+
+            # Export public key to RFC4716 format
+            keygen_process = subprocess.run(["ssh-keygen", "-P", "", "-e", "-m",
+                                             "RFC4716", "-f", key_file.name],
+                                            capture_output=True, text=True, check=False)
+
+            if keygen_process.returncode == 0:
+                with tempfile.NamedTemporaryFile(mode="w") as ssh2_key_file:
+                    ssh2_key_file.write(keygen_process.stdout)
+                    ssh2_key_file.flush()
+                    # Import public key to OpenSSH format
+                    keygen_process = subprocess.run(["ssh-keygen", "-i", "-m", "RFC4716", "-f", ssh2_key_file.name], capture_output=True, text=True, check=False)
+                    if keygen_process.returncode == 0:
+                        key_data["pub"] = keygen_process.stdout
+
+        keygen_process = subprocess.run(["ssh-keygen", "-l", "-f", key_file.name], capture_output=True, text=True, check=False)
 
         if keygen_process.returncode == 0:
-            key_data["sha256"] = " ".join(keygen_process.stdout.decode("utf-8").split(" ")[0:2])
-            comment = " ".join(keygen_process.stdout.decode("utf-8").split(" ")[2:-1])
+            key_data["sha256"] = " ".join(keygen_process.stdout.split(" ")[1:2])
+            comment = " ".join(keygen_process.stdout.split(" ")[2:-1])
             if comment not in ["", "no comment"]:
                 key_data["comments"].append(comment)
 
@@ -78,9 +96,9 @@ def get_pubkey_data(pubkey_string):
         key_file.write(pubkey_string)
         key_file.flush()
 
-        keygen_process = subprocess.run(["ssh-keygen", "-l", "-f", key_file.name], stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
+        keygen_process = subprocess.run(["ssh-keygen", "-l", "-f", key_file.name], capture_output=True, text=True, check=False)
         if keygen_process.returncode == 0:
-            key_data["sha256"] = " ".join(keygen_process.stdout.decode("utf-8").split(" ")[0:2])
+            key_data["sha256"] = " ".join(keygen_process.stdout.split(" ")[1:2])
 
     return key_data
 
