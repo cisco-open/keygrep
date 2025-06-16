@@ -16,6 +16,7 @@
 # SPDX-License-Identifier: Apache-2.0
 """Discovers and compares ssh keys"""
 
+import os
 import argparse
 import logging
 import pickle
@@ -32,11 +33,11 @@ def main():
     parser.add_argument("--include_mangled", action="store_true",
                         help="""Include unrecovered "mangled" keys in results.
                         Without this option, keygrep will log and ignore
-                        potentially recoverable private keys that it discovers.
-                        Sometimes these are redacted or malformed example keys
-                        (such as in docs), but they might be recoverable by
-                        hand. Including this option may result in invalid key
-                        files.""")
+                        potentially recoverable public and private keys that it
+                        discovers.  Sometimes these are redacted or malformed
+                        example keys (such as in docs), but they might be
+                        recoverable by hand. Including this option may result
+                        in invalid key files.""")
 
     # Possible options to consider adding:
     # --only_encrypted (for cracking)
@@ -72,7 +73,7 @@ def main():
             with open(args.i, "rb") as inf:
                 findings = pickle.load(inf)
         except FileNotFoundError:
-            logging.info("No state file found, creating a new keychain...")
+            logging.info("No state file found at %s, creating a new keychain...", args.i)
             findings = KeyChain(output_dir=args.out_dir, path_prefix=args.s,
                                          include_mangled=args.include_mangled)
     else:
@@ -81,6 +82,8 @@ def main():
 
     try:
         for path in args.p:
+            if not os.path.exists(path):
+                logging.warning("Path %s does not exist", path)
             findings.load_private_keys(path)
             findings.load_public_keys(path)
 

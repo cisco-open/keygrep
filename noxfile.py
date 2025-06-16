@@ -4,11 +4,11 @@ import nox
 
 @nox.session
 def lint(session):
-    """Lint source files."""
-    #session.install("-r", "requirements.txt")
-    session.install("pylint", "nox")
+    """Lint source files and tests."""
+    session.install("pylint", "nox", ".")
     session.run("pylint", "noxfile.py")
     session.run("pylint", *session.posargs, "src")
+    session.run("pylint", *session.posargs, "tests")
 
 @nox.session
 def trailing_whitespace(session):
@@ -23,16 +23,13 @@ def trailing_whitespace(session):
     if result:
         session.error("Trailing whitespace found:\n" + result)
 
-# Tests have not yet been formalized due to potential issues with committing
-# key data. Some utility scripts for manual testing are included under tests/
-#@nox.session(python=["3.9", "3.10", "3.11"])
-#def tests(session):
-#    """Run the unit tests."""
-#    session.install("pytest")
-#    session.install(".")
-#    session.run("pylint", *session.posargs, "tests")
-#    session.run("bash", "tests/generate-test-keys.sh", "tests/test-keys", external=True)
-#    session.run("pytest", *session.posargs, "tests")
+@nox.session
+def tests(session):
+    """Run the unit tests. Downloads a set of test keys from the OpenSSH repo."""
+    session.run("bash", "tests/download-test-keys.sh", "tests/test-keys", external=True)
+    session.install("pytest")
+    session.install(".")
+    session.run("pytest", "-s", *session.posargs, "tests")
 
 @nox.session
 def build(session):

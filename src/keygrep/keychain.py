@@ -41,18 +41,27 @@ class KeyChain():
         self.path_prefix_pattern = re.compile(rf"^{os.path.join(os.path.normpath(os.path.expanduser(path_prefix)), '')}")
 
         self.private_key_pattern = re.compile(
-                rb"-{5}BEGIN(.{1,12})PRIVATE KEY-{5}"
-                rb"((?:(?!-{5}BEGIN).){,32768}?)"
-                rb"-{5}END\1PRIVATE KEY-{5}",
-                re.DOTALL
+            rb"-{5}BEGIN(.{1,12})PRIVATE KEY-{5}"
+            rb"((?:(?!-{5}BEGIN).){,32768}?)"
+            rb"-{5}END\1PRIVATE KEY-{5}",
+            re.DOTALL
         )
 
+        # OpenSSH formatted pubkey regex
+        # Does not currently capture PEM/PKCS8 public keys
         # The following public key pattern does not attempt to capture ssh key
         # comments, as there's no foolproof way to identify the end of a
         # comment. The 68 character minimum length is the shortest length
         # likely to correspond to a valid key, which is an ed25519 public key.
         # Upper of limit of 3000 should be sufficient for up to 16384 bit keys
-        self.public_key_pattern = re.compile(r"ssh-[a-z0-9]{0,7}\s+[a-zA-Z0-9+=/]{68,3000}".encode("utf-8"))
+
+        # Longest key type identifier might be something like
+        # sk-ecdsa-sha2-nistp521-cert-v01@openssh.com
+        self.public_key_pattern = re.compile(
+            rb"(sk\-)?"
+            rb"(ssh|ecdsa)-[a-z0-9\.@\-]{0,80}"
+            rb"\s+[a-zA-Z0-9+=/]{68,3000}"
+        )
 
     def load_public_keys(self, path):
         """Walk path and search text files under it for public keys."""
@@ -148,27 +157,33 @@ class KeyChain():
             logging.warning("IO error reading %s", path)
 
     def parse_public_key(self, key, found_in_path, position=-1):
-        """Parses a single public key block."""
+        """Parses a single public key block. Does not perform unmangling."""
 
         # Remove path prefix
         found_in_path = re.sub(self.path_prefix_pattern, "", found_in_path)
 
         key_data = {
             "pub": key,
-            "sha256": "",
+            "sha256": None,
             "comments": [],
             "pubkey_locations": {found_in_path: [position]}
         }
 
         key_data.update(get_pubkey_data(key))
 
+        # If we can't calculate the fingerprint, the key is mangled/invalid
+        if not key_data["sha256"] and not self.include_mangled:
+            return
+
         for index_existing_key,existing_key in enumerate(self.public_keys):
 
-            if key_data["sha256"] == existing_key["sha256"]:
+            # Compare based on SHA256 excluding any comments
+            # public keys. If we can't determine the fingerprint (due to a mangled/invalid key),
+            # treat it as unique unless it is string-identical to an existing key
+            if (key_data["sha256"] == existing_key["sha256"] and key_data["sha256"] is not None) or key_data["pub"] == existing_key["pub"]:
                 self.public_keys[index_existing_key]["pubkey_locations"].update({found_in_path: existing_key["pubkey_locations"].get(found_in_path, []) + [position]})
 
-                # Remove duplicated positions from keys loaded a second time (from
-                # both a state file and a path)
+                # Remove duplicated positions from keys loaded a second time (from both a state file and a path)
                 self.public_keys[index_existing_key]["pubkey_locations"][found_in_path] = sorted(list(set(self.public_keys[index_existing_key]["pubkey_locations"][found_in_path])))
 
                 # There should only be at most one new comment in key_data, but the existing key may have multiple
@@ -222,7 +237,7 @@ class KeyChain():
 
         key_data = {
             "encrypted": False,
-            "sha256": "",
+            "sha256": None,
             "comments": [],
             "priv": key,
             "pub": None,
@@ -249,7 +264,9 @@ class KeyChain():
         for index_existing_key,existing_key in enumerate(self.private_keys):
 
             # Compare based on SHA256 excluding any comments
-            if key_data["sha256"] == existing_key["sha256"]:
+            # If we can't determine the fingerprint (due to mangled/invalid keys, or encrypted PEM/PKCS8 keys),
+			# treat the key as unique unless it is string-identical to an existing key
+            if (key_data["sha256"] == existing_key["sha256"] and key_data["sha256"] is not None) or key_data["priv"] == existing_key["priv"]:
 
                 # If this is a duplicate key, update the original to include where we found the copy and any new comment
                 self.private_keys[index_existing_key]["privkey_locations"].update({found_in_path: existing_key["privkey_locations"].get(found_in_path, []) + [position]})
