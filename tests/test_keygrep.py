@@ -4,6 +4,7 @@
 import json
 from pathlib import Path
 from keygrep.keychain import KeyChain
+from keygrep.keygrep_utility import get_privkey_data
 
 # Test keys are from published OpenSSH test data
 # Use download-test-keys.sh to set up
@@ -100,10 +101,20 @@ def test_openssh_keys(tmp_path):
         assert key["pub"] is not None
         assert key["sha256"] is not None
 
-# If a cleartext and encrypted copy of a key are both discovered, keep the cleartext copy.
-# This is not the current behavior.
-#def test_encrypted_and_clear(tmp_path):
-#    """Check behavior if we have both an encrypted and a cleartext copy of a key."""
-#    out_dir = tmp_path / "findings"
-#    test_data_dir = Path(__file__).parent / "test-keys/clear-vs-encrypted"
-#    run_keygrep(test_data_dir, out_dir, include_mangled=False)
+def test_encrypted_and_clear(tmp_path):
+    """Check that cleartext keys replace encrypted keys if we have copies of both.behavior if we have both an encrypted and a cleartext copy of a key."""
+    out_dir = tmp_path / "findings"
+
+    kc = KeyChain(output_dir=out_dir, path_prefix="", include_mangled=False)
+    # Load encrypted first, in a format where we can obtain the fingerprint.
+    kc.load_private_keys(Path(__file__).parent / "test-keys/openssh/ed25519_1_pw")
+    # Load a cleartext copy of the same key
+    kc.load_private_keys(Path(__file__).parent / "test-keys/openssh/ed25519_1")
+    kc.write_summary()
+
+    with open(out_dir / "private.json", "r", encoding="utf-8") as inf:
+        priv_data = json.load(inf)
+
+    assert priv_data[0]["encrypted"] is False
+    assert get_privkey_data(priv_data[0]["priv"])["encrypted"] is False
+    print("Cleartext key replaces encrypted key")

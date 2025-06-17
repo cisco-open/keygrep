@@ -268,6 +268,11 @@ class KeyChain():
 			# treat the key as unique unless it is string-identical to an existing key
             if (key_data["sha256"] == existing_key["sha256"] and key_data["sha256"] is not None) or key_data["priv"] == existing_key["priv"]:
 
+                # If this is a cleartext duplicate of an encrypted key, replace the encrypted one
+                if key_data["encrypted"] is False and existing_key["encrypted"] is True:
+                    self.private_keys[index_existing_key]["priv"] = key_data["priv"]
+                    self.private_keys[index_existing_key]["encrypted"] = False
+
                 # If this is a duplicate key, update the original to include where we found the copy and any new comment
                 self.private_keys[index_existing_key]["privkey_locations"].update({found_in_path: existing_key["privkey_locations"].get(found_in_path, []) + [position]})
 
