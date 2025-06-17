@@ -91,6 +91,15 @@ identify the end of a comment in keys contained in unstructured text data.
 For convenience, the private keys are also stored in individual files under
 `private/` in the output directory.
 
+The "encrypted" field identifies whether we've found any cleartext copies of a
+particular key. In the case where both encrypted and cleartext versions of a
+key are discovered, this value will be false, and keygrep will store the
+cleartext version. If only encrypted copies are discovered, the value will be
+true.
+
+Other than this exception, Keygrep stores the first version of each key it
+finds.
+
 [jq](https://jqlang.github.io/jq/) is recommended for parsing
 private.json. For example, you might want to list only the discovered
 private keys for which public keys were also discovered:
