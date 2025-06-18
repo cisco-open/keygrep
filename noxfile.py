@@ -23,7 +23,7 @@ def trailing_whitespace(session):
     if result:
         session.error("Trailing whitespace found:\n" + result)
 
-@nox.session
+@nox.session(python=["3.8", "3.9", "3.10", "3.11", "3.12", "3.13"])
 def tests(session):
     """Run the unit tests. Downloads a set of test keys from the OpenSSH repo."""
     session.run("bash", "tests/download-test-keys.sh", "tests/test-keys", external=True)
