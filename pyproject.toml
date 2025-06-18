@@ -7,22 +7,29 @@ name = "keygrep"
 version = "0.0.1"
 description = "Red team ssh key discovery utility"
 readme = "README.md"
-requires-python = ">=3.9"
+requires-python = ">=3.8"
 license-files = ["LICENSE"]
 authors = [
     { name = "Adam Reiser", email = "reiser@defensivecomputing.io" }
 ]
 classifiers = [
+    "Intended Audience :: System Administrators",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Development Status :: 4 - Beta",
     "Operating System :: OS Independent",
     "Environment :: Console",
     "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: Security",
     "Topic :: Text Processing",
-    "Topic :: Text Processing :: Filters",
 ]
+
 dependencies = [
 ]
 
