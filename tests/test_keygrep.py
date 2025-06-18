@@ -55,8 +55,10 @@ def test_openssh_keys(tmp_path):
     with open(out_dir / "private.json", "r", encoding="utf-8") as inf:
         priv_data = json.load(inf)
 
-    # There should be 26 copies of 15 distinct private keys
-    assert len(priv_data) == 15
+    # There should be 26 total instances of 15 distinct private keys.
+    # 2 are distinct DSA keys, so without DSA support, 13 keys
+    # should be identified when include_mangled=False
+    assert len(priv_data) in (13, 15)
 
     n = 0
     for key in priv_data:
@@ -64,7 +66,8 @@ def test_openssh_keys(tmp_path):
         # the key was found. For this test data, there's only one key per file
         n+=len(key["privkey_locations"])
 
-    assert n == 26
+    # There are 4 DSA key files (dsa_1, dsa_2, dsa_n, dsa_n_pw) so 22 total keys without DSA support
+    assert n in (22, 26)
 
     for key in priv_data:
         # For OpenSSH formatted encrypted private keys, we can obtain the fingerprint and public key without the passphrase
@@ -79,8 +82,9 @@ def test_openssh_keys(tmp_path):
     with open(out_dir / "public.json", "r", encoding="utf-8") as inf:
         pub_data = json.load(inf)
 
-    # There should be 22 copies of 12 distinct public keys
-    assert len(pub_data) == 12
+    # There should be 22 copies of 12 distinct public keys, or 19 and 10 if no DSA support
+    # dsa_1.pub, dsa_1-cert.pub, dsa_2.pub
+    assert len(pub_data) in (10, 12)
 
     # Note that the reason there are 15 "distinct" private keys and only 12
     # public keys is that rsa_1_pw, ecdsa_1_pw, and dsa_1_pw are encrypted PEM
@@ -94,7 +98,7 @@ def test_openssh_keys(tmp_path):
         # the key was found. For this test data, there's only one key per file
         n+=len(key["pubkey_locations"])
 
-    assert n == 22
+    assert n in (19, 22)
 
     # If include_mangled is False, we should always have a public key string
     # and fingerprint for each public key

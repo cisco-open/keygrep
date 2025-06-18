@@ -38,7 +38,7 @@ class KeyChain():
 
         # Strip this prefix from the found_in_path field
         # This makes sure it ends with a path separator
-        self.path_prefix_pattern = re.compile(rf"^{os.path.join(os.path.normpath(os.path.expanduser(path_prefix)), '')}")
+        self.path_prefix_pattern = re.compile(rf"""^{os.path.join(os.path.normpath(os.path.expanduser(path_prefix)), "")}""")
 
         self.private_key_pattern = re.compile(
             rb"-{5}BEGIN(.{1,12})PRIVATE KEY-{5}"
@@ -221,8 +221,8 @@ class KeyChain():
         # Standardize line length
         inner_key = "\n".join(textwrap.wrap(inner_key, width=64))
 
-        affixes = (f"-----BEGIN{full_key.group(1).decode('utf-8')}PRIVATE KEY-----",
-                   f"-----END{full_key.group(1).decode('utf-8')}PRIVATE KEY-----")
+        affixes = (f"""-----BEGIN{full_key.group(1).decode("utf-8")}PRIVATE KEY-----""",
+                   f"""-----END{full_key.group(1).decode("utf-8")}PRIVATE KEY-----""")
 
         # Re-insert headers with correct newlines
         if len(headers) > 0:
