@@ -41,8 +41,9 @@ def walk(path, func):
 
 def get_privkey_data(privkey_string):
     """Returns a dict with the public key and encryption status of the provided
-    private key. If the key is encrypted or malformed, the public key returned
-    will be None."""
+    private key. If these cannot be determined, then the private key is either
+    an encrypted PKCS8/PEM key, or is malformed. In this case, the the public
+    key returned will be None."""
 
     key_data = {"encrypted": False, "pub": None, "sha256": None, "comments": []}
 

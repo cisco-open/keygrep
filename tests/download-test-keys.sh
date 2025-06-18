@@ -23,6 +23,8 @@ if [ ! -d openssh-portable ]; then
     git clone https://github.com/openssh/openssh-portable.git
 fi
 
+cd openssh-portable
+
 # Commit containing DSA keys
 git checkout e95c0a0e964827722d29b4bc00d5c0ff4afe0ed2
 
