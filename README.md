@@ -23,7 +23,7 @@ options:
                      that it discovers. Sometimes these are redacted or malformed example keys (such as in docs), but they might be recoverable by hand.
                      Including this option may result in invalid key files.
   -p path            Add this to the list of paths to search for keys. May be used multiple times.
-  -i state_file      Load the keychain object from this file and write to it on close.
+  -i state_file      Load public and private keys from this JSON state file if it exists and write to it on close.
   -s string          Strip this leading string from the reported key location paths (e.g., if you're searching /tmp/inventory, you might set this to either /tmp or /tmp/inventory.) Note that this operates on the path only, not the filename. '~' will be expanded.
 ```
 
@@ -107,7 +107,7 @@ This will produce more compact output that looks something like this:
 
 ```json
 {
-  "sha256": "2048 SHA256:REoRXyGCovWtM87Lb/xUl3MaJQlPqB7SFLmqOBVtQ+k  (RSA)",
+  "sha256": "SHA256:REoRXyGCovWtM87Lb/xUl3MaJQlPqB7SFLmqOBVtQ+k",
   "pubkey_locations": {
     "/sample-data/homes/jbloggs/.ssh/key.pub": [
       0
