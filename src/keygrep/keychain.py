@@ -27,7 +27,7 @@ from .keygrep_utility import walk, NumericOpen, get_pubkey_data, get_privkey_dat
 
 __all__ = ["KeyChain"]
 
-class KeyChain():
+class KeyChain:
     """Class containing all discovered keys and derived information."""
     def __init__(self, output_dir="",  path_prefix="", include_mangled=False):
 
@@ -62,6 +62,40 @@ class KeyChain():
             rb"(ssh|ecdsa)-[a-z0-9\.@\-]{0,80}"
             rb"\s+[a-zA-Z0-9+=/]{68,3000}"
         )
+    def write_state(self, path):
+        """Write the public and private keys as a state file to the given
+        path."""
+
+        keychain_dict = {"private_keys": self.private_keys, "public_keys": self.public_keys}
+
+        try:
+            with open(path, "w", encoding="utf-8") as state_file:
+                json.dump(keychain_dict, state_file)
+
+        except IOError:
+            logging.error("Cannot write state file at %s", path)
+            raise
+
+    def read_state(self, path):
+        """Load the public and private keys from the state file at the given
+        path if it exists. Replaces any existing keys."""
+
+        try:
+            with open(path, "r", encoding="utf-8") as state_file:
+                keychain_dict = json.load(state_file)
+                self.private_keys = keychain_dict["private_keys"]
+                self.public_keys = keychain_dict["public_keys"]
+
+        except FileNotFoundError:
+            logging.info("No existing state found at %s", path)
+
+        except (json.decoder.JSONDecodeError, KeyError):
+            logging.error("%s is not a state file", path)
+            raise
+
+        except IOError:
+            logging.error("Cannot read state file at %s", path)
+            raise
 
     def load_public_keys(self, path):
         """Walk path and search text files under it for public keys."""

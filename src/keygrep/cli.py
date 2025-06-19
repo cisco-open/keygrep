@@ -17,9 +17,10 @@
 """Discovers and compares ssh keys"""
 
 import os
+import sys
+import json
 import argparse
 import logging
-import pickle
 from keygrep.keychain import KeyChain
 
 
@@ -49,8 +50,8 @@ def main():
                         keys. May be used multiple times.""")
 
     parser.add_argument("-i", metavar="state_file", action="store", default="",
-                        help="""Load the keychain object from this file and
-                        write to it on close.""")
+                        help="""Load public and private keys from this JSON
+                        state file if it exists and write to it on close.""")
 
     parser.add_argument(metavar="output_directory", dest="out_dir", action="store",
                         help="""Store extracted keys and
@@ -68,17 +69,14 @@ def main():
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s  - %(message)s")
 
+    findings = KeyChain(output_dir=args.out_dir, path_prefix=args.s,
+                        include_mangled=args.include_mangled)
+
     if args.i:
         try:
-            with open(args.i, "rb") as inf:
-                findings = pickle.load(inf)
-        except FileNotFoundError:
-            logging.info("No state file found at %s, creating a new keychain...", args.i)
-            findings = KeyChain(output_dir=args.out_dir, path_prefix=args.s,
-                                         include_mangled=args.include_mangled)
-    else:
-        findings = KeyChain(output_dir=args.out_dir, path_prefix=args.s,
-                                     include_mangled=args.include_mangled)
+            findings.read_state(args.i)
+        except (json.decoder.JSONDecodeError, IOError, KeyError):
+            sys.exit(1)
 
     try:
         for path in args.p:
@@ -97,9 +95,10 @@ def main():
         findings.write_private_keys()
         findings.write_public_keys()
         if args.i:
-            with open(args.i, "wb") as outf:
-                logging.info("Writing state to %s", args.i)
-                pickle.dump(findings, outf)
+            try:
+                findings.write_state(args.i)
+            except IOError:
+                sys.exit(1)
 
 if __name__ == "__main__":
     main()
