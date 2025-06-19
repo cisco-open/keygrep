@@ -89,7 +89,7 @@ class KeyChain:
         except FileNotFoundError:
             logging.info("No existing state found at %s", path)
 
-        except (json.decoder.JSONDecodeError, KeyError):
+        except (json.decoder.JSONDecodeError, KeyError, UnicodeDecodeError):
             logging.error("%s is not a state file", path)
             raise
 
