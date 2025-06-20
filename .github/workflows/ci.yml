@@ -1,4 +1,4 @@
-name: Keygrep 
+name: Keygrep
 on: [push]
 
 jobs:
