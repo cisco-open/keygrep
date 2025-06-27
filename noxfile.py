@@ -25,8 +25,7 @@ def trailing_whitespace(session):
 
 @nox.session
 def tests(session):
-    """Run the unit tests. Downloads a set of test keys from the OpenSSH repo."""
-    session.run("bash", "tests/download-test-keys.sh", "tests/test-keys", external=True)
+    """Run the unit tests."""
     session.install("pytest")
     session.install(".")
     session.run("pytest", "-s", *session.posargs, "tests")

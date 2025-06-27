@@ -1,6 +1,4 @@
 dist/
 *.egg-info/
-findings
 *.pyc
 __pycache__
-test-keys
