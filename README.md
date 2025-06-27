@@ -32,6 +32,10 @@ Keygrep has no Python dependencies, but OpenSSH must be installed, as it makes
 external calls to `ssh-keygen`. Install Keygrep by cloning this repository and
 running `pip install .` from it.
 
+DSA key support is disabled by default in OpenSSH 9.8/9.8p1 (and removed in
+OpenSSH 10.0/10.0p2). If this version is installed, DSA keys will still be
+discovered, but are logged as unrecoverable ("mangled") keys.
+
 ### Usage:
 Search the `/sample-data` directory for keys and write the output to `findings/`:
 
@@ -55,7 +59,7 @@ unique private key. The structure looks like this:
 ```json
     {
         "encrypted": false,
-        "sha256": "2048 SHA256:REoRXyGCovWtM87Lb/xUl3MaJQlPqB7SFLmqOBVtQ+k  (RSA)",
+        "sha256": "SHA256:REoRXyGCovWtM87Lb/xUl3MaJQlPqB7SFLmqOBVtQ+k",
         "comments": [
             "server key",
             "jbloggs@workstation-7"
@@ -89,7 +93,7 @@ identify the end of a comment in keys contained in unstructured data.
 
 The "encrypted" field identifies whether Keygrep found any cleartext copies of a
 particular key. In the case where both encrypted and cleartext versions of a
-key are discovered, this value will be false, and keygrep will store the
+key are discovered, this value will be false, and Keygrep will store the
 cleartext version. If only encrypted copies are discovered, the value will be
 true.
 
@@ -124,5 +128,4 @@ For convenience, the private and public keys are also stored in individual
 files under `private/` and `public/` in the output directory.
 
 ### Development
-Simply install and run `nox` to lint, test, and build. This will download test
-key data from the OpenSSH GitHub repo.
+Simply install and run `nox` to lint, test, and build.

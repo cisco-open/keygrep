@@ -23,6 +23,7 @@ import re
 import tempfile
 import subprocess
 import unicodedata
+from functools import cache
 
 
 def walk(path, func):
@@ -40,10 +41,11 @@ def walk(path, func):
                 func(os.path.join(dirpath, fname))
 
 def get_privkey_data(privkey_string):
-    """Returns a dict with the public key and encryption status of the provided
-    private key. If these cannot be determined, then the private key is either
-    an encrypted PKCS8/PEM key, or is malformed. In this case, the the public
-    key returned will be None."""
+    """Returns a dict with the public key, fingerprint, encryption status, and
+    a list of comment strings for the provided private key. If these cannot be
+    determined, then the private key is either an encrypted PKCS8/PEM key, or
+    is malformed. In either of these cases, the the public key returned will be
+    None."""
 
     key_data = {"encrypted": False, "pub": None, "sha256": None, "comments": []}
 
@@ -88,8 +90,8 @@ def get_privkey_data(privkey_string):
     return key_data
 
 def get_pubkey_data(pubkey_string):
-    """Returns a dict with the SHA256 sum (without comments) from the provided
-    public key string."""
+    """Returns a dict with the SHA256 sum (without key size or comments) from
+    the provided public key string."""
 
     key_data = {"sha256": None}
 
@@ -103,9 +105,13 @@ def get_pubkey_data(pubkey_string):
 
     return key_data
 
-def remove_pubkey_comment(pubkey_string):
-    """Returns the provided public key minus any comment string."""
-    return " ".join(pubkey_string.split(" ")[0:2]).strip()
+@cache
+def dsa_key_support():
+    """Return True if the system supports DSA keys. False otherwise."""
+
+    ssh_process = subprocess.run(["ssh", "-Q", "key"], capture_output=True, text=True, check=True)
+
+    return any(line.strip() == "ssh-dss" for line in ssh_process.stdout.splitlines())
 
 def recursive_decode(uri):
     """Apply urllib.parse.unquote to uri until it can't be decoded any

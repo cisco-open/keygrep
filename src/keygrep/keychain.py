@@ -23,7 +23,7 @@ import json
 import csv
 import logging
 import textwrap
-from .keygrep_utility import walk, NumericOpen, get_pubkey_data, get_privkey_data, remove_pubkey_comment
+from .keygrep_utility import walk, NumericOpen, get_pubkey_data, get_privkey_data
 
 __all__ = ["KeyChain"]
 
@@ -40,6 +40,7 @@ class KeyChain:
         # This makes sure it ends with a path separator
         self.path_prefix_pattern = re.compile(rf"""^{os.path.join(os.path.normpath(os.path.expanduser(path_prefix)), "")}""")
 
+        # This is sufficient to cover 16384 bit RSA keys
         self.private_key_pattern = re.compile(
             rb"-{5}BEGIN(.{1,12})PRIVATE KEY-{5}"
             rb"((?:(?!-{5}BEGIN).){,32768}?)"
@@ -47,16 +48,13 @@ class KeyChain:
             re.DOTALL
         )
 
-        # OpenSSH formatted pubkey regex
+        # OpenSSH formatted pubkey regex (ssh -Q key)
         # Does not currently capture PEM/PKCS8 public keys
         # The following public key pattern does not attempt to capture ssh key
         # comments, as there's no foolproof way to identify the end of a
         # comment. The 68 character minimum length is the shortest length
         # likely to correspond to a valid key, which is an ed25519 public key.
         # Upper of limit of 3000 should be sufficient for up to 16384 bit keys
-
-        # Longest key type identifier might be something like
-        # sk-ecdsa-sha2-nistp521-cert-v01@openssh.com
         self.public_key_pattern = re.compile(
             rb"(sk\-)?"
             rb"(ssh|ecdsa)-[a-z0-9\.@\-]{0,80}"
@@ -106,7 +104,7 @@ class KeyChain:
         walk(os.path.expanduser(path), self.find_privkeys_in_file)
 
     def write_summary(self):
-        """Write a summary of private keys found"""
+        """Write the output JSON files."""
         os.makedirs(self.output_dir, mode=0o700, exist_ok=True)
 
         # Write public key JSON output
@@ -331,7 +329,7 @@ class KeyChain:
         for pubkey in self.public_keys:
             for index_privkey,privkey in enumerate(self.private_keys):
                 if privkey["pub"] is not None:
-                    if remove_pubkey_comment(privkey["pub"]) == remove_pubkey_comment(pubkey["pub"]):
+                    if privkey["sha256"] == pubkey["sha256"]:
                         self.private_keys[index_privkey]["pubkey_locations"] = pubkey["pubkey_locations"]
 
                 # Unique the discovered public key locations, or each
