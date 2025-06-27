@@ -23,7 +23,11 @@ import re
 import tempfile
 import subprocess
 import unicodedata
-from functools import cache
+import functools
+
+
+# Python 3.8 fallback to lru_cache
+cache = getattr(functools, "cache", functools.lru_cache(maxsize=None))
 
 
 def walk(path, func):
