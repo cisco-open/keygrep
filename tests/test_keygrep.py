@@ -1,11 +1,58 @@
 #!/usr/bin/env python3
 """Keygrep tests"""
 
+import os
 import json
+import subprocess
 from pathlib import Path
 from keygrep.keychain import KeyChain
-from keygrep.keygrep_utility import get_privkey_data, dsa_key_support
+from keygrep.keygrep_utility import get_privkey_data, dsa_key_support, NumericOpen
 
+
+def get_fpr(path):
+    """Get the SHA256 fingerprint of the ssh key at the given path"""
+    keygen_process = subprocess.run(["ssh-keygen", "-l", "-f", Path(path)], capture_output=True, text=True, check=False)
+    return " ".join(keygen_process.stdout.split(" ")[1:2])
+
+def test_numeric_write(tmp_path):
+    """Test that excessively long filenames are truncated."""
+
+    max_len = os.pathconf(tmp_path, "PC_NAME_MAX")
+    target = "A" * max_len
+
+    with NumericOpen(target, tmp_path) as outf:
+        outf.write("")
+
+    with NumericOpen(target, tmp_path) as outf:
+        outf.write("")
+
+    assert set(os.listdir(tmp_path)) == {"A" * max_len, "A" * (max_len - 2) + "-2"}
+
+def test_doubled_header(tmp_path):
+    """Test that keys are detected in files with superfluous BEGIN blocks."""
+    kc = KeyChain(output_dir=tmp_path, path_prefix=Path(__file__).parent, include_mangled=False)
+    kc.load_private_keys(Path(__file__).parent / "test-keys/doubled_header")
+    assert kc.private_keys[0]["sha256"] == "SHA256:l6itGumSMcRBBAFteCgmjQBIXqLK/jFGUH3viHX1RmE"
+
+def test_public_key_dump(tmp_path):
+    """Test that public keys are correctly dumped."""
+    kc = KeyChain(output_dir=tmp_path, path_prefix=Path(__file__).parent, include_mangled=False)
+    kc.load_public_keys(Path(__file__).parent / "test-keys/multiple_keys.pub")
+    kc.write_public_keys()
+
+    assert set(os.listdir(tmp_path / "public")) == {"test-keys_multiple_keys.pub", "test-keys_multiple_keys.pub-2"}
+    assert get_fpr(tmp_path / "public" / "test-keys_multiple_keys.pub") == "SHA256:l6itGumSMcRBBAFteCgmjQBIXqLK/jFGUH3viHX1RmE"
+    assert get_fpr(tmp_path / "public" / "test-keys_multiple_keys.pub-2") == "SHA256:NoQh0XBUuYUSWqnzOzOBnfpgJTRWLMj7BlWAb8IbjeE"
+
+def test_private_key_dump(tmp_path):
+    """Test that private keys are correctly dumped."""
+    kc = KeyChain(output_dir=tmp_path, path_prefix=Path(__file__).parent, include_mangled=False)
+    kc.load_private_keys(Path(__file__).parent / "test-keys/multiple_keys")
+    kc.write_private_keys()
+
+    assert set(os.listdir(tmp_path / "private")) == {"test-keys_multiple_keys", "test-keys_multiple_keys-2"}
+    assert get_fpr(tmp_path / "private" / "test-keys_multiple_keys") == "SHA256:l6itGumSMcRBBAFteCgmjQBIXqLK/jFGUH3viHX1RmE"
+    assert get_fpr(tmp_path / "private" / "test-keys_multiple_keys-2") == "SHA256:NoQh0XBUuYUSWqnzOzOBnfpgJTRWLMj7BlWAb8IbjeE"
 
 def test_correlation(tmp_path):
     """Test that private keys are correctly associated with public keys."""
@@ -13,26 +60,26 @@ def test_correlation(tmp_path):
     kc.load_private_keys(Path(__file__).parent / "test-keys/openssh/ed25519_1")
     kc.load_public_keys(Path(__file__).parent / "test-keys/openssh/ed25519_1.pub")
     kc.correlate_keys()
-    kc.write_summary()
 
-    with open(tmp_path / "private.json", "r", encoding="utf-8") as inf:
-        priv_data = json.load(inf)
+    assert Path(list(kc.private_keys[0]["pubkey_locations"])[0]).name == "ed25519_1.pub"
 
-    assert Path(list(priv_data[0]["pubkey_locations"])[0]).name == "ed25519_1.pub"
+def test_unmangling(tmp_path):
+    """Test unmangling rules."""
+    kc = KeyChain(output_dir=tmp_path, path_prefix="", include_mangled=False)
+    kc.load_private_keys(Path(__file__).parent / "test-keys/recoverable_ed25519_1")
+
+    assert {t["sha256"] for t in kc.private_keys} == {"SHA256:L3k/oJubblSY0lB9Ulsl7emDMnRPKm/8udf2ccwk560"}
+    assert list(kc.private_keys[0]["privkey_locations"].values()) == [[72, 493, 951]]
 
 def test_viminfo_unmangling(tmp_path):
     """Test .viminfo unmangling rules."""
     kc = KeyChain(output_dir=tmp_path, path_prefix="", include_mangled=False)
     kc.load_private_keys(Path(__file__).parent / "test-keys/viminfo")
-    kc.write_summary()
 
-    with open(tmp_path / "private.json", "r", encoding="utf-8") as inf:
-        priv_data = json.load(inf)
+    assert {t["sha256"] for t in kc.private_keys} == {"SHA256:L3k/oJubblSY0lB9Ulsl7emDMnRPKm/8udf2ccwk560",
+                                                      "SHA256:l6itGumSMcRBBAFteCgmjQBIXqLK/jFGUH3viHX1RmE"}
 
-    assert {t["sha256"] for t in priv_data} == {"SHA256:L3k/oJubblSY0lB9Ulsl7emDMnRPKm/8udf2ccwk560",
-                                                "SHA256:l6itGumSMcRBBAFteCgmjQBIXqLK/jFGUH3viHX1RmE"}
-
-    for private_key in priv_data:
+    for private_key in kc.private_keys:
         if private_key["sha256"] == "SHA256:L3k/oJubblSY0lB9Ulsl7emDMnRPKm/8udf2ccwk560":
             assert list(private_key["privkey_locations"].values()) == [[446, 888]]
         if private_key["sha256"] == "SHA256:l6itGumSMcRBBAFteCgmjQBIXqLK/jFGUH3viHX1RmE":
@@ -62,28 +109,20 @@ def test_identical_keys(tmp_path):
     test_data_dir = Path(__file__).parent / "test-keys/identical-keys"
     kc = KeyChain(output_dir=tmp_path)
     kc.load_private_keys(test_data_dir)
-    kc.write_summary()
 
-    with open(tmp_path / "private.json", "r", encoding="utf-8") as inf:
-        priv_data = json.load(inf)
-    assert len(priv_data) == 1
-    assert len(priv_data[0]["privkey_locations"]) == 5
-    print("Identical private keys are correctly collapsed")
+    assert len(kc.private_keys) == 1
+    assert len(kc.private_keys[0]["privkey_locations"]) == 5
 
 def test_invalid_public_keys(tmp_path):
     """Test that distinct invalid public keys are tracked."""
 
     kc = KeyChain(output_dir=tmp_path, path_prefix="", include_mangled=True)
     kc.load_public_keys(Path(__file__).parent / "test-keys/bad-keys")
-    kc.write_summary()
-
-    with open(tmp_path / "public.json", "r", encoding="utf-8") as inf:
-        pub_data = json.load(inf)
-    assert len(pub_data) == 2
-    print("Distinct invalid public keys are separately recorded")
+    assert len(kc.public_keys) == 2
 
 def test_openssh_keys(tmp_path):
-    """Test that the expected results are generated from OpenSSH test keys."""
+    """Test that the expected results are written to private.json for OpenSSH
+    test keys."""
 
     kc = KeyChain(output_dir=tmp_path, path_prefix="", include_mangled=False)
     kc.load_private_keys(Path(__file__).parent / "test-keys/openssh")
@@ -166,9 +205,5 @@ def test_encrypted_and_clear(tmp_path):
     kc.load_private_keys(Path(__file__).parent / "test-keys/openssh/ed25519_1")
     kc.write_summary()
 
-    with open(tmp_path / "private.json", "r", encoding="utf-8") as inf:
-        priv_data = json.load(inf)
-
-    assert priv_data[0]["encrypted"] is False
-    assert get_privkey_data(priv_data[0]["priv"])["encrypted"] is False
-    print("Cleartext key replaces encrypted key")
+    assert kc.private_keys[0]["encrypted"] is False
+    assert get_privkey_data(kc.private_keys[0]["priv"])["encrypted"] is False
