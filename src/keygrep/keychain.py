@@ -23,6 +23,7 @@ import json
 import csv
 import logging
 import textwrap
+from pathlib import Path
 from .keygrep_utility import walk, NumericOpen, get_pubkey_data, get_privkey_data
 
 __all__ = ["KeyChain"]
@@ -33,12 +34,11 @@ class KeyChain:
 
         self.private_keys = []
         self.public_keys = []
-        self.output_dir = os.path.expanduser(output_dir)
+        self.output_dir = Path(output_dir).expanduser()
         self.include_mangled = include_mangled
 
-        # Strip this prefix from the found_in_path field
-        # This makes sure it ends with a path separator
-        self.path_prefix_pattern = re.compile(rf"""^{os.path.join(os.path.normpath(os.path.expanduser(path_prefix)), "")}""")
+        # Strip this prefix from the reported paths
+        self.path_prefix = Path(path_prefix).expanduser()
 
         # This is sufficient to cover 16384 bit RSA keys
         self.private_key_pattern = re.compile(
@@ -108,15 +108,16 @@ class KeyChain:
         os.makedirs(self.output_dir, mode=0o700, exist_ok=True)
 
         # Write public key JSON output
-        with open(os.path.join(self.output_dir, "public.json"), "w", encoding="utf-8") as outf:
-            outf.write(json.dumps(self.public_keys, indent=4))
+        with open(Path(self.output_dir, "public.json"), "w", encoding="utf-8") as outf:
+            json.dump(self.public_keys, outf, indent=4)
 
         # Write private key JSON output
-        with open(os.path.join(self.output_dir, "private.json"), "w", encoding="utf-8") as outf:
-            outf.write(json.dumps(self.private_keys, indent=4))
+        fd = os.open(Path(self.output_dir, "private.json"), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(self.private_keys, f, indent=4)
 
         # Write private key CSV output
-        with open(os.path.join(self.output_dir, "private.csv"), "w", encoding="utf-8") as outf:
+        with open(Path(self.output_dir, "private.csv"), "w", encoding="utf-8") as outf:
             key_writer = csv.writer(outf, delimiter=",", quotechar='"', quoting=csv.QUOTE_MINIMAL)
             key_writer.writerow(["Encrypted", "sha256", "public key", "number of places private key found", "number of places public key found"])
             for key in self.private_keys:
@@ -124,34 +125,36 @@ class KeyChain:
 
     def write_public_keys(self):
         """Dump public keys"""
+
         try:
             for filename in os.listdir(os.path.join(self.output_dir, "public")):
                 os.unlink(os.path.join(self.output_dir, "public", filename))
         except FileNotFoundError:
             pass
 
-        os.makedirs(os.path.join(self.output_dir, "public"), mode=0o700, exist_ok=True)
+        dest_dir = Path(self.output_dir, "public")
+        os.makedirs(dest_dir, mode=0o700, exist_ok=True)
 
         for key in self.public_keys:
             # Use the lexically first filename where the key was found
-            with NumericOpen(sorted(key["pubkey_locations"]\
-                                            .keys())[0], os.path.join(\
-                                            self.output_dir, "public"), mode="x") as key_out:
+            with NumericOpen(sorted(key["pubkey_locations"].keys())[0], dest_dir) as key_out:
                 key_out.write(key.get("pub"))
 
     def write_private_keys(self):
         """Dump private keys"""
+
         try:
             for filename in os.listdir(os.path.join(self.output_dir, "private")):
                 os.unlink(os.path.join(self.output_dir, "private", filename))
         except FileNotFoundError:
             pass
 
-        os.makedirs(os.path.join(self.output_dir, "private"), mode=0o700, exist_ok=True)
+        dest_dir = Path(self.output_dir, "private")
+        os.makedirs(dest_dir, mode=0o700, exist_ok=True)
 
         for key in self.private_keys:
             # Use the lexically first filename where the key was found
-            with NumericOpen(sorted(key["privkey_locations"].keys())[0], os.path.join(self.output_dir, "private"), mode="x") as key_out:
+            with NumericOpen(sorted(key["privkey_locations"].keys())[0], dest_dir) as key_out:
                 key_out.write(key.get("priv"))
 
     def find_privkeys_in_file(self, path):
@@ -192,7 +195,8 @@ class KeyChain:
         """Parses a single public key block. Does not perform unmangling."""
 
         # Remove path prefix
-        found_in_path = re.sub(self.path_prefix_pattern, "", found_in_path)
+        if Path(found_in_path).is_relative_to(self.path_prefix):
+            found_in_path = str(Path(found_in_path).relative_to(self.path_prefix))
 
         key_data = {
             "pub": key,
@@ -207,7 +211,7 @@ class KeyChain:
         if not key_data["sha256"] and not self.include_mangled:
             return
 
-        for index_existing_key,existing_key in enumerate(self.public_keys):
+        for index_existing_key, existing_key in enumerate(self.public_keys):
 
             # Compare based on SHA256 excluding any comments
             # public keys. If we can't determine the fingerprint (due to a mangled/invalid key),
@@ -247,6 +251,9 @@ class KeyChain:
         # Special logic for viminfo
         inner_key = re.sub(r">\d+", "", inner_key)
 
+        # Special logic for C comments
+        inner_key = inner_key.replace("/*", "").replace("*/", "")
+
         # Filter invalid characters
         inner_key = re.sub(r"[^a-zA-Z0-9/+=]", "", inner_key)
 
@@ -262,10 +269,9 @@ class KeyChain:
         else:
             key = "\n".join((affixes[0], inner_key, affixes[1])) + "\n"
 
-        mangled = False
-
         # Remove path prefix
-        found_in_path = re.sub(self.path_prefix_pattern, "", found_in_path)
+        if Path(found_in_path).is_relative_to(self.path_prefix):
+            found_in_path = str(Path(found_in_path).relative_to(self.path_prefix))
 
         key_data = {
             "encrypted": False,
@@ -281,19 +287,17 @@ class KeyChain:
 
         # The key is mangled beyond automatic repair
         if not key_data["pub"] and not key_data["encrypted"]:
-            mangled = True
-
-        if not mangled and not key_data["encrypted"]:
-            logging.info("Found key of length %d at position %d in %s", len(key), position, found_in_path)
-        elif not mangled:
-            logging.info("Found encrypted key of length %d at position %d in %s", len(key), position, found_in_path)
+            label = "mangled key"
+        elif key_data["encrypted"]:
+            label = "encrypted key"
         else:
-            logging.info("Found mangled key of length %d at position %d in %s", len(key), position, found_in_path)
+            label = "key"
 
-        if mangled and not self.include_mangled:
+        logging.info("Found %s of length %d at position %d in %s", label, len(key), position, found_in_path)
+        if label == "mangled key" and not self.include_mangled:
             return
 
-        for index_existing_key,existing_key in enumerate(self.private_keys):
+        for index_existing_key, existing_key in enumerate(self.private_keys):
 
             # Compare based on SHA256 excluding any comments
             # If we can't determine the fingerprint (due to mangled/invalid keys, or encrypted PEM/PKCS8 keys),
@@ -327,7 +331,7 @@ class KeyChain:
         """Compare discovered public and private keys."""
 
         for pubkey in self.public_keys:
-            for index_privkey,privkey in enumerate(self.private_keys):
+            for index_privkey, privkey in enumerate(self.private_keys):
                 if privkey["pub"] is not None:
                     if privkey["sha256"] == pubkey["sha256"]:
                         self.private_keys[index_privkey]["pubkey_locations"] = pubkey["pubkey_locations"]

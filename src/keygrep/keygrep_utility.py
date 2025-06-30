@@ -24,6 +24,8 @@ import tempfile
 import subprocess
 import unicodedata
 import functools
+import itertools
+from pathlib import Path
 
 
 # Python 3.8 fallback to lru_cache
@@ -128,67 +130,67 @@ def recursive_decode(uri):
 
     return decoded
 
-
-def safe_filename(unsafe_name, max_len=255, safety_margin=12):
-    """Sanitizes the input filename and truncates to a maximum length. Assumes a
-    system filename length maximum of 255 and leaves an additional 12
-    characters for incremented filenames (file-1.jpg, file-2.jpg, etc.) for use
-    with incremented filenames in NumericOpen."""
-
-    # URL decode
-    name = recursive_decode(unsafe_name)
-
-    name = unicodedata.normalize("NFKD", name)
-
-    # Convert slashes into underscores
-    name = re.sub(r"[/\\]", "_", name)
-
-    # Convert whitespace into dashes
-    name = re.sub(r"[\s]", "-", name)
-
-    # Discard most characters
-    name = re.sub(r"[^a-zA-Z0-9._-]", "", name)
-
-    root, ext = os.path.splitext(name)
-
-    # Truncate the part of the name before the extension
-    root = root[0:max_len - safety_margin - len(ext)]
-    safe_name = root + ext
-
-    assert len(safe_name) <= (max_len - safety_margin)
-    return safe_name
-
 class NumericOpen():
-    """Wrapper around open() with path. Creates the directory mode 0700 if it
-    doesn't exist. Works similarly to tempfile.NamedTemporaryFile, but uses
-    ascending numeric values instead of random strings."""
+    """Sanitizes the path "target_name" to a file name and writes it to the
+    directory "path". Typical usage is that "target_name" is a directory tree,
+    which is flattened into a single file. If the destination file exists,
+    appends an ascending hyphenated numeric value to the name before writing
+    it. Creates the directory "path" mode 0700 if it doesn't exist."""
 
-    def __init__(self, target_name, path, **kwargs):
-        self.target_name = target_name
+    def __init__(self, target_name, path, encoding="utf-8"):
         self.path = path
         self.file_handle = None
-        self.open_kwargs = kwargs
+        self.encoding = encoding
+        self.target_name = target_name
 
     def __enter__(self):
         os.makedirs(self.path, mode=0o700, exist_ok=True)
-        self.target_name = safe_filename(self.target_name)
-        basename = os.path.splitext(self.target_name)[0]
-        ext = os.path.splitext(self.target_name)[1]
+        max_len = os.pathconf(self.path, "PC_NAME_MAX")
+        sanitized_name = self._sanitize_filename(self.target_name)
 
-        i = 1
+        try:
+            truncated_name = sanitized_name[0:max_len]
+            fd = os.open(Path(self.path, truncated_name), os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+            self.file_handle = os.fdopen(fd, "w", encoding=self.encoding)
+            return self.file_handle
 
-        # Could add a maximum increment value here
-        while True:
-            try:
-                # Doesn't check to see if it ultimately succeeded
-                self.file_handle = open(os.path.join(self.path, self.target_name), **self.open_kwargs, encoding="utf-8")
-                break
-            except FileExistsError:
-                i += 1
-                self.target_name = os.path.join(f"{basename}-{i}{ext}".format(basename, i, ext))
+        except FileExistsError:
+            for i in itertools.count(start=2, step=1):
+                try:
+                    max_len = os.pathconf(self.path, "PC_NAME_MAX") - len(str(i)) - 1
+                    truncated_name = _sanitized_name[0:max_len] + "-" + str(i)
+                    fd = os.open(Path(self.path, truncated_name), os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+                    self.file_handle = os.fdopen(fd, "w", encoding=self.encoding)
+                    return self.file_handle
+                except FileExistsError:
+                    pass
 
-        return self.file_handle
+        return None
+
+    def _sanitize_filename(self, target_name):
+        """Sanitizes the input filename without truncating."""
+
+        # URL decode
+        name = recursive_decode(target_name)
+
+        # Normalize
+        name = unicodedata.normalize("NFKD", name)
+
+        # Convert slashes into underscores
+        name = re.sub(r"[/\\]", "_", name)
+
+        # Convert whitespace into hyphens
+        name = re.sub(r"[\s]", "-", name)
+
+        # Discard most characters
+        name = re.sub(r"[^a-zA-Z0-9._-]", "", name)
+
+        # Assign a default name if nothing left
+        if name == "":
+            name = "empty_name"
+
+        return name
 
     def __exit__(self, exception_type, exception_value, traceback):
-        self.file_handle.close()
-        os.chmod(os.path.join(self.path, self.target_name), 0o600)
+        if self.file_handle:
+            self.file_handle.close()
