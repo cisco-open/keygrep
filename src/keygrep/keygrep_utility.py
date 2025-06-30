@@ -158,7 +158,7 @@ class NumericOpen():
             for i in itertools.count(start=2, step=1):
                 try:
                     max_len = os.pathconf(self.path, "PC_NAME_MAX") - len(str(i)) - 1
-                    truncated_name = _sanitized_name[0:max_len] + "-" + str(i)
+                    truncated_name = sanitized_name[0:max_len] + "-" + str(i)
                     fd = os.open(Path(self.path, truncated_name), os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
                     self.file_handle = os.fdopen(fd, "w", encoding=self.encoding)
                     return self.file_handle
