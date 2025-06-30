@@ -119,6 +119,15 @@ def dsa_key_support():
 
     return any(line.strip() == "ssh-dss" for line in ssh_process.stdout.splitlines())
 
+def remove_path_prefix(path, prefix="") -> bool:
+    """Removes the prefix from the provided path if applicable. Uses try/except
+    instead of PurePath.is_relative_to for 3.8 compatibility.  Returns a string
+    so that the resulting object is JSON-serializable."""
+    try:
+        return str(Path(path).relative_to(prefix))
+    except ValueError:
+        return str(path)
+
 def recursive_decode(uri):
     """Apply urllib.parse.unquote to uri until it can't be decoded any
     further."""

@@ -24,7 +24,7 @@ import csv
 import logging
 import textwrap
 from pathlib import Path
-from .keygrep_utility import walk, NumericOpen, get_pubkey_data, get_privkey_data
+from .keygrep_utility import walk, NumericOpen, get_pubkey_data, get_privkey_data, remove_path_prefix
 
 __all__ = ["KeyChain"]
 
@@ -195,8 +195,7 @@ class KeyChain:
         """Parses a single public key block. Does not perform unmangling."""
 
         # Remove path prefix
-        if Path(found_in_path).is_relative_to(self.path_prefix):
-            found_in_path = str(Path(found_in_path).relative_to(self.path_prefix))
+        found_in_path = remove_path_prefix(found_in_path, prefix=self.path_prefix)
 
         key_data = {
             "pub": key,
@@ -270,8 +269,7 @@ class KeyChain:
             key = "\n".join((affixes[0], inner_key, affixes[1])) + "\n"
 
         # Remove path prefix
-        if Path(found_in_path).is_relative_to(self.path_prefix):
-            found_in_path = str(Path(found_in_path).relative_to(self.path_prefix))
+        found_in_path = remove_path_prefix(found_in_path, prefix=self.path_prefix)
 
         key_data = {
             "encrypted": False,
