@@ -16,15 +16,15 @@
 # SPDX-License-Identifier: Apache-2.0
 """Discovers and compares ssh keys"""
 
-import os
 import sys
 import json
 import argparse
 import logging
+from pathlib import Path
 from keygrep.keychain import KeyChain
 
 
-def main():
+def main() -> None:
     """Search specified directories for SSH keys."""
 
     parser = argparse.ArgumentParser(description="""Searches the specified
@@ -80,7 +80,7 @@ def main():
 
     try:
         for path in args.p:
-            if not os.path.exists(path):
+            if not Path(path).exists():
                 logging.warning("Path %s does not exist", path)
             findings.load_private_keys(path)
             findings.load_public_keys(path)

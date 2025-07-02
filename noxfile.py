@@ -24,6 +24,12 @@ def trailing_whitespace(session):
         session.error("Trailing whitespace found:\n" + result)
 
 @nox.session
+def mypy(session):
+    """Run type checks using mypy."""
+    session.install("mypy")
+    session.run("mypy", *session.posargs)
+
+@nox.session
 def tests(session):
     """Run the unit tests."""
     session.install("pytest")

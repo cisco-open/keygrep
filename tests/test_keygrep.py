@@ -4,37 +4,49 @@
 import os
 import json
 import subprocess
+from typing import Union
 from pathlib import Path
 from keygrep.keychain import KeyChain
 from keygrep.keygrep_utility import get_privkey_data, dsa_key_support, NumericOpen
 
+StrPath = Union[str, os.PathLike[str]]
 
-def get_fpr(path):
+def get_fpr(path: StrPath) -> str:
     """Get the SHA256 fingerprint of the ssh key at the given path"""
     keygen_process = subprocess.run(["ssh-keygen", "-l", "-f", Path(path)], capture_output=True, text=True, check=False)
     return " ".join(keygen_process.stdout.split(" ")[1:2])
 
-def test_numeric_write(tmp_path):
-    """Test that excessively long filenames are truncated."""
+def test_numeric_open(tmp_path: Path) -> None:
+    """Test various cases of NumericOpen()."""
 
     max_len = os.pathconf(tmp_path, "PC_NAME_MAX")
-    target = "A" * max_len
 
-    with NumericOpen(target, tmp_path) as outf:
-        outf.write("")
+    filenames = [
+        "A" * max_len,
+        "A" * max_len,  # Duplicate should truncate two characters and append "-2"
+        "/foo/bar/",    # Flatten
+        "%41",          # Decode
+        "ÃÃÃ"           # Normalize
+    ]
 
-    with NumericOpen(target, tmp_path) as outf:
-        outf.write("")
+    for filename in filenames:
+        with NumericOpen(filename, tmp_path) as outf:
+            outf.write("")
 
-    assert set(os.listdir(tmp_path)) == {"A" * max_len, "A" * (max_len - 2) + "-2"}
+    assert set(os.listdir(tmp_path)) == {"A" * max_len,
+                                         "A" * (max_len - 2) + "-2",
+                                         "_foo_bar_",
+                                         "A",
+                                         "AAA",
+                                        }
 
-def test_doubled_header(tmp_path):
+def test_doubled_header(tmp_path: Path) -> None:
     """Test that keys are detected in files with superfluous BEGIN blocks."""
     kc = KeyChain(output_dir=tmp_path, path_prefix=Path(__file__).parent, include_mangled=False)
     kc.load_private_keys(Path(__file__).parent / "test-keys/doubled_header")
     assert kc.private_keys[0]["sha256"] == "SHA256:l6itGumSMcRBBAFteCgmjQBIXqLK/jFGUH3viHX1RmE"
 
-def test_public_key_dump(tmp_path):
+def test_public_key_dump(tmp_path: Path) -> None:
     """Test that public keys are correctly dumped."""
     kc = KeyChain(output_dir=tmp_path, path_prefix=Path(__file__).parent, include_mangled=False)
     kc.load_public_keys(Path(__file__).parent / "test-keys/multiple_keys.pub")
@@ -44,7 +56,7 @@ def test_public_key_dump(tmp_path):
     assert get_fpr(tmp_path / "public" / "test-keys_multiple_keys.pub") == "SHA256:l6itGumSMcRBBAFteCgmjQBIXqLK/jFGUH3viHX1RmE"
     assert get_fpr(tmp_path / "public" / "test-keys_multiple_keys.pub-2") == "SHA256:NoQh0XBUuYUSWqnzOzOBnfpgJTRWLMj7BlWAb8IbjeE"
 
-def test_private_key_dump(tmp_path):
+def test_private_key_dump(tmp_path: Path) -> None:
     """Test that private keys are correctly dumped."""
     kc = KeyChain(output_dir=tmp_path, path_prefix=Path(__file__).parent, include_mangled=False)
     kc.load_private_keys(Path(__file__).parent / "test-keys/multiple_keys")
@@ -54,7 +66,7 @@ def test_private_key_dump(tmp_path):
     assert get_fpr(tmp_path / "private" / "test-keys_multiple_keys") == "SHA256:l6itGumSMcRBBAFteCgmjQBIXqLK/jFGUH3viHX1RmE"
     assert get_fpr(tmp_path / "private" / "test-keys_multiple_keys-2") == "SHA256:NoQh0XBUuYUSWqnzOzOBnfpgJTRWLMj7BlWAb8IbjeE"
 
-def test_correlation(tmp_path):
+def test_correlation(tmp_path: Path) -> None:
     """Test that private keys are correctly associated with public keys."""
     kc = KeyChain(output_dir=tmp_path, path_prefix="", include_mangled=False)
     kc.load_private_keys(Path(__file__).parent / "test-keys/openssh/ed25519_1")
@@ -63,7 +75,7 @@ def test_correlation(tmp_path):
 
     assert Path(list(kc.private_keys[0]["pubkey_locations"])[0]).name == "ed25519_1.pub"
 
-def test_unmangling(tmp_path):
+def test_unmangling(tmp_path: Path) -> None:
     """Test unmangling rules."""
     kc = KeyChain(output_dir=tmp_path, path_prefix="", include_mangled=False)
     kc.load_private_keys(Path(__file__).parent / "test-keys/recoverable_ed25519_1")
@@ -71,7 +83,7 @@ def test_unmangling(tmp_path):
     assert {t["sha256"] for t in kc.private_keys} == {"SHA256:L3k/oJubblSY0lB9Ulsl7emDMnRPKm/8udf2ccwk560"}
     assert list(kc.private_keys[0]["privkey_locations"].values()) == [[72, 493, 951]]
 
-def test_viminfo_unmangling(tmp_path):
+def test_viminfo_unmangling(tmp_path: Path) -> None:
     """Test .viminfo unmangling rules."""
     kc = KeyChain(output_dir=tmp_path, path_prefix="", include_mangled=False)
     kc.load_private_keys(Path(__file__).parent / "test-keys/viminfo")
@@ -85,7 +97,7 @@ def test_viminfo_unmangling(tmp_path):
         if private_key["sha256"] == "SHA256:l6itGumSMcRBBAFteCgmjQBIXqLK/jFGUH3viHX1RmE":
             assert list(private_key["privkey_locations"].values()) == [[1323, 2251]]
 
-def test_fingerprints(tmp_path):
+def test_fingerprints(tmp_path: Path) -> None:
     """Test that fingerprints are correctly generated."""
 
     files = ["ecdsa_1", "ecdsa_2", "ecdsa_sk1", "ecdsa_sk2", "ed25519_1",
@@ -102,8 +114,7 @@ def test_fingerprints(tmp_path):
         with open(Path(__file__).parent / "test-keys/openssh" / f"{file}.fp", "r", encoding="utf-8") as fp_file:
             assert kc.private_keys[-1].get("sha256") == fp_file.read().strip()
 
-
-def test_identical_keys(tmp_path):
+def test_identical_keys(tmp_path: Path) -> None:
     """Test that for both public and private keys, keys with the same
     fingerprint are considered the same key."""
     test_data_dir = Path(__file__).parent / "test-keys/identical-keys"
@@ -113,14 +124,14 @@ def test_identical_keys(tmp_path):
     assert len(kc.private_keys) == 1
     assert len(kc.private_keys[0]["privkey_locations"]) == 5
 
-def test_invalid_public_keys(tmp_path):
+def test_invalid_public_keys(tmp_path: Path) -> None:
     """Test that distinct invalid public keys are tracked."""
 
     kc = KeyChain(output_dir=tmp_path, path_prefix="", include_mangled=True)
     kc.load_public_keys(Path(__file__).parent / "test-keys/bad-keys")
     assert len(kc.public_keys) == 2
 
-def test_openssh_keys(tmp_path):
+def test_openssh_keys(tmp_path: Path) -> None:
     """Test that the expected results are written to private.json for OpenSSH
     test keys."""
 
@@ -194,7 +205,7 @@ def test_openssh_keys(tmp_path):
         assert key["pub"] is not None
         assert key["sha256"] is not None
 
-def test_encrypted_and_clear(tmp_path):
+def test_encrypted_and_clear(tmp_path: Path) -> None:
     """Check that cleartext keys replace encrypted keys if we have copies of
     both."""
 

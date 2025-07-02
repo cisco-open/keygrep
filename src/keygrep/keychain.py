@@ -24,24 +24,29 @@ import csv
 import logging
 import textwrap
 from pathlib import Path
+from typing import Dict, List, Pattern, Union, Any
 from .keygrep_utility import walk, NumericOpen, get_pubkey_data, get_privkey_data, remove_path_prefix
 
 __all__ = ["KeyChain"]
 
+# Python 3.8 compatible TypeAlias
+StrPath = Union[str, os.PathLike[str]]
+
 class KeyChain:
     """Class containing all discovered keys and derived information."""
-    def __init__(self, output_dir="",  path_prefix="", include_mangled=False):
+    def __init__(self, output_dir: StrPath = "", path_prefix: StrPath = "", include_mangled: bool = False) -> None:
+        self.private_keys: List[Dict[str, Any]] = []
+        self.public_keys: List[Dict[str, Any]] = []
 
-        self.private_keys = []
-        self.public_keys = []
-        self.output_dir = Path(output_dir).expanduser()
-        self.include_mangled = include_mangled
+        self.output_dir: Path = Path(output_dir).expanduser()
+
+        self.include_mangled: bool = include_mangled
 
         # Strip this prefix from the reported paths
         self.path_prefix = Path(path_prefix).expanduser()
 
         # This is sufficient to cover 16384 bit RSA keys
-        self.private_key_pattern = re.compile(
+        self.private_key_pattern: Pattern[bytes] = re.compile(
             rb"-{5}BEGIN(.{1,12})PRIVATE KEY-{5}"
             rb"((?:(?!-{5}BEGIN).){,32768}?)"
             rb"-{5}END\1PRIVATE KEY-{5}",
@@ -55,26 +60,27 @@ class KeyChain:
         # comment. The 68 character minimum length is the shortest length
         # likely to correspond to a valid key, which is an ed25519 public key.
         # Upper of limit of 3000 should be sufficient for up to 16384 bit keys
-        self.public_key_pattern = re.compile(
+        self.public_key_pattern: Pattern[bytes] = re.compile(
             rb"(sk\-)?"
             rb"(ssh|ecdsa)-[a-z0-9\.@\-]{0,80}"
             rb"\s+[a-zA-Z0-9+=/]{68,3000}"
         )
-    def write_state(self, path):
+
+    def write_state(self, path: StrPath) -> None:
         """Write the public and private keys as a state file to the given
         path."""
 
         keychain_dict = {"private_keys": self.private_keys, "public_keys": self.public_keys}
 
         try:
-            with open(path, "w", encoding="utf-8") as state_file:
+            with open(Path(path), "w", encoding="utf-8") as state_file:
                 json.dump(keychain_dict, state_file)
 
         except IOError:
             logging.error("Cannot write state file at %s", path)
             raise
 
-    def read_state(self, path):
+    def read_state(self, path: StrPath) -> None:
         """Load the public and private keys from the state file at the given
         path if it exists. Replaces any existing keys."""
 
@@ -95,15 +101,15 @@ class KeyChain:
             logging.error("Cannot read state file at %s", path)
             raise
 
-    def load_public_keys(self, path):
+    def load_public_keys(self, path: StrPath) -> None:
         """Walk path and search text files under it for public keys."""
-        walk(os.path.expanduser(path), self.find_pubkeys_in_file)
+        walk(Path(path).expanduser(), self.find_pubkeys_in_file)
 
-    def load_private_keys(self, path):
+    def load_private_keys(self, path: StrPath) -> None:
         """Walk path and search text files under it for private keys."""
-        walk(os.path.expanduser(path), self.find_privkeys_in_file)
+        walk(Path(path).expanduser(), self.find_privkeys_in_file)
 
-    def write_summary(self):
+    def write_summary(self) -> None:
         """Write the output JSON files."""
         os.makedirs(self.output_dir, mode=0o700, exist_ok=True)
 
@@ -123,12 +129,12 @@ class KeyChain:
             for key in self.private_keys:
                 key_writer.writerow([key["encrypted"], key["sha256"], key["pub"], sum(len(k) for k in key["privkey_locations"].values()), sum(len(k) for k in key["pubkey_locations"].values())])
 
-    def write_public_keys(self):
+    def write_public_keys(self) -> None:
         """Dump public keys"""
 
         try:
-            for filename in os.listdir(os.path.join(self.output_dir, "public")):
-                os.unlink(os.path.join(self.output_dir, "public", filename))
+            for filename in os.listdir(Path(self.output_dir, "public")):
+                Path.unlink(Path(self.output_dir, "public", filename))
         except FileNotFoundError:
             pass
 
@@ -138,14 +144,14 @@ class KeyChain:
         for key in self.public_keys:
             # Use the lexically first filename where the key was found
             with NumericOpen(sorted(key["pubkey_locations"].keys())[0], dest_dir) as key_out:
-                key_out.write(key.get("pub"))
+                key_out.write(key.get("pub", ""))
 
-    def write_private_keys(self):
+    def write_private_keys(self) -> None:
         """Dump private keys"""
 
         try:
-            for filename in os.listdir(os.path.join(self.output_dir, "private")):
-                os.unlink(os.path.join(self.output_dir, "private", filename))
+            for filename in os.listdir(Path(self.output_dir, "private")):
+                Path.unlink(Path(self.output_dir, "private", filename))
         except FileNotFoundError:
             pass
 
@@ -155,9 +161,9 @@ class KeyChain:
         for key in self.private_keys:
             # Use the lexically first filename where the key was found
             with NumericOpen(sorted(key["privkey_locations"].keys())[0], dest_dir) as key_out:
-                key_out.write(key.get("priv"))
+                key_out.write(key.get("priv", ""))
 
-    def find_privkeys_in_file(self, path):
+    def find_privkeys_in_file(self, path: StrPath) -> None:
         """Find and parse all private keys in the file at path."""
         try:
             with open(path, "rb") as inf:
@@ -175,7 +181,7 @@ class KeyChain:
         except IOError:
             logging.warning("IO error reading %s", path)
 
-    def find_pubkeys_in_file(self, path):
+    def find_pubkeys_in_file(self, path: StrPath) -> None:
         """Find and parse all public keys in the file at path."""
         try:
             with open(path, "rb") as inf:
@@ -191,13 +197,13 @@ class KeyChain:
         except IOError:
             logging.warning("IO error reading %s", path)
 
-    def parse_public_key(self, key, found_in_path, position=-1):
+    def parse_public_key(self, key: str, found_in_path: StrPath, position: int =-1) -> None:
         """Parses a single public key block. Does not perform unmangling."""
 
         # Remove path prefix
         found_in_path = remove_path_prefix(found_in_path, prefix=self.path_prefix)
 
-        key_data = {
+        key_data: Dict[str, Any] = {
             "pub": key,
             "sha256": None,
             "comments": [],
@@ -231,7 +237,7 @@ class KeyChain:
 
         self.public_keys.append(key_data)
 
-    def parse_private_key(self, full_key, found_in_path, position=-1):
+    def parse_private_key(self, full_key: re.Match[bytes], found_in_path: StrPath, position: int = -1) -> None:
         """Parses a single key block. Performs fix-up transforms to restore
         mangled keys (e.g., when a private key found in an environment
         variable). Calculates fingerprints and appends a dictionary of the
@@ -244,7 +250,7 @@ class KeyChain:
         # We assume that even for mangled keys, these will end with a (possibly escaped) newline or
         # other non-escaped whitespace (typically a space), as with keys found in environment variables
         inner_key = inner_key.replace("\\n", "\n").replace("\\\n", "\n")
-        headers = list(filter(None, re.findall(r"^|\s([a-zA-Z0-9,\-]+: [\S]+)", inner_key, flags=re.M)))
+        headers: List[str] = list(filter(None, re.findall(r"^|\s([a-zA-Z0-9,\-]+: [\S]+)", inner_key, flags=re.M)))
         inner_key = re.sub(r"^|\s[a-zA-Z0-9,\-]+: \S+", "", inner_key, flags=re.M).strip()
 
         # Special logic for viminfo
@@ -271,7 +277,7 @@ class KeyChain:
         # Remove path prefix
         found_in_path = remove_path_prefix(found_in_path, prefix=self.path_prefix)
 
-        key_data = {
+        key_data: Dict[str, Any] = {
             "encrypted": False,
             "sha256": None,
             "comments": [],
@@ -325,7 +331,7 @@ class KeyChain:
 
         self.private_keys.append(key_data)
 
-    def correlate_keys(self):
+    def correlate_keys(self) -> None:
         """Compare discovered public and private keys."""
 
         for pubkey in self.public_keys:

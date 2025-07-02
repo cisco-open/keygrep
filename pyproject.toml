@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "keygrep"
-version = "0.0.2"
+version = "0.0.3"
 description = "Red team ssh key discovery utility"
 readme = "README.md"
 requires-python = ">=3.8"
@@ -39,3 +39,8 @@ keygrep = "keygrep.cli:main"
 [project.urls]
 "Homepage" = "https://github.com/cisco-open/keygrep"
 "Bug Tracker" = "https://github.com/cisco-open/keygrep/issues"
+
+[tool.mypy]
+files = ["src", "tests"]
+strict = true
+disallow_untyped_decorators = false
