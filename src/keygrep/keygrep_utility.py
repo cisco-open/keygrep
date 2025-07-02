@@ -23,37 +23,44 @@ import re
 import tempfile
 import subprocess
 import unicodedata
-import functools
+from functools import cache
 import itertools
 from pathlib import Path
+from typing import Optional, IO, Type, Callable
+from types import TracebackType
+from .types import StrPath, PublicKeyRecord, PrivateKeyRecord
 
 
-# Python 3.8 fallback to lru_cache
-cache = getattr(functools, "cache", functools.lru_cache(maxsize=None))
-
-
-def walk(path, func):
+def walk(path: StrPath, func: Callable[[StrPath], None]) -> None:
     """Runs the given function against each file discovered under the
     provided path."""
 
-    # Follow symlinks if specifically provided
-    if os.path.isfile(path):
+    # Follows symlinks pointing at regular files
+    if Path(path).is_file():
         func(path)
     else:
         for dirpath, _, filenames in os.walk(path):
             for fname in filenames:
-                if os.path.islink(os.path.join(dirpath, fname)):
+                if Path.is_symlink(Path(dirpath, fname)):
                     continue
-                func(os.path.join(dirpath, fname))
+                func(Path(dirpath, fname))
 
-def get_privkey_data(privkey_string):
-    """Returns a dict with the public key, fingerprint, encryption status, and
-    a list of comment strings for the provided private key. If these cannot be
-    determined, then the private key is either an encrypted PKCS8/PEM key, or
-    is malformed. In either of these cases, the the public key returned will be
-    None."""
+def get_privkey_data(privkey_string: str) -> PrivateKeyRecord:
+    """Returns a PrivateKeyRecord with the public key, fingerprint, encryption
+    status, and comment strings for the provided private key. If these cannot
+    be determined, then the private key is either an encrypted PKCS8/PEM key,
+    or is malformed. In either of these cases, the the public key returned will
+    be None."""
 
-    key_data = {"encrypted": False, "pub": None, "sha256": None, "comments": []}
+    key_data: PrivateKeyRecord = {
+        "encrypted": False,
+        "priv": privkey_string,
+        "pub": None,
+        "sha256": None,
+        "comments": [],
+        "pubkey_locations": {},
+        "privkey_locations": {}
+    }
 
     with tempfile.NamedTemporaryFile(mode="w") as key_file:
         key_file.write(privkey_string)
@@ -95,11 +102,16 @@ def get_privkey_data(privkey_string):
 
     return key_data
 
-def get_pubkey_data(pubkey_string):
-    """Returns a dict with the SHA256 sum (without key size or comments) from
-    the provided public key string."""
+def get_pubkey_data(pubkey_string: str) -> PublicKeyRecord:
+    """Returns a PublicKeyRecord from the provided public key string. If the
+    fingerprint cannot be determined, the key is malformed."""
 
-    key_data = {"sha256": None}
+    key_data: PublicKeyRecord = {
+        "pub": pubkey_string,
+        "sha256": None,
+        "comments": [],
+        "pubkey_locations": {}
+    }
 
     with tempfile.NamedTemporaryFile(mode="w") as key_file:
         key_file.write(pubkey_string)
@@ -108,36 +120,30 @@ def get_pubkey_data(pubkey_string):
         keygen_process = subprocess.run(["ssh-keygen", "-l", "-f", key_file.name], capture_output=True, text=True, check=False)
         if keygen_process.returncode == 0:
             key_data["sha256"] = " ".join(keygen_process.stdout.split(" ")[1:2])
+            # Keychain doesn't capture public key comments, but record them if present
+            comment = " ".join(keygen_process.stdout.split(" ")[2:-1])
+            if comment not in ["", "no comment"]:
+                key_data["comments"].append(comment)
 
     return key_data
 
 @cache
-def dsa_key_support():
+def dsa_key_support() -> bool:
     """Return True if the system supports DSA keys. False otherwise."""
 
     ssh_process = subprocess.run(["ssh", "-Q", "key"], capture_output=True, text=True, check=True)
 
     return any(line.strip() == "ssh-dss" for line in ssh_process.stdout.splitlines())
 
-def remove_path_prefix(path, prefix="") -> bool:
-    """Removes the prefix from the provided path if applicable. Uses try/except
-    instead of PurePath.is_relative_to for 3.8 compatibility.  Returns a string
-    so that the resulting object is JSON-serializable."""
-    try:
-        return str(Path(path).relative_to(prefix))
-    except ValueError:
-        return str(path)
+def remove_path_prefix(path: StrPath, prefix: StrPath="") -> str:
+    """Removes the prefix from the provided path if applicable. Returns a
+    string so that the resulting object is JSON-serializable."""
 
-def recursive_decode(uri):
-    """Apply urllib.parse.unquote to uri until it can't be decoded any
-    further."""
-    decoded = urllib.parse.unquote(uri)
+    path, prefix = Path(path), Path(prefix)
 
-    while decoded != uri:
-        uri = decoded
-        decoded = urllib.parse.unquote(uri)
-
-    return decoded
+    if path.is_relative_to(prefix):
+        return str(path.relative_to(prefix))
+    return str(path)
 
 class NumericOpen():
     """Sanitizes the path "target_name" to a file name and writes it to the
@@ -146,13 +152,14 @@ class NumericOpen():
     appends an ascending hyphenated numeric value to the name before writing
     it. Creates the directory "path" mode 0700 if it doesn't exist."""
 
-    def __init__(self, target_name, path, encoding="utf-8"):
-        self.path = path
-        self.file_handle = None
-        self.encoding = encoding
-        self.target_name = target_name
+    def __init__(self, target_name: StrPath, path: StrPath, encoding: str="utf-8"):
+        self.path = Path(path)
+        self.file_handle: Optional[IO[str]] = None
+        self.encoding: str = encoding
+        self.target_name: str = str(target_name)
 
-    def __enter__(self):
+    def __enter__(self) -> IO[str]:
+
         os.makedirs(self.path, mode=0o700, exist_ok=True)
         max_len = os.pathconf(self.path, "PC_NAME_MAX")
         sanitized_name = self._sanitize_filename(self.target_name)
@@ -174,19 +181,19 @@ class NumericOpen():
                 except FileExistsError:
                     pass
 
-        return None
+        raise OSError
 
-    def _sanitize_filename(self, target_name):
+    def _sanitize_filename(self, target_name: str) -> str:
         """Sanitizes the input filename without truncating."""
 
         # URL decode
-        name = recursive_decode(target_name)
+        name = self._recursive_decode(target_name)
 
         # Normalize
         name = unicodedata.normalize("NFKD", name)
 
-        # Convert slashes into underscores
-        name = re.sub(r"[/\\]", "_", name)
+        # Convert path separators into underscores
+        name = name.replace("/", "_").replace("\\", "_")
 
         # Convert whitespace into hyphens
         name = re.sub(r"[\s]", "-", name)
@@ -200,6 +207,19 @@ class NumericOpen():
 
         return name
 
-    def __exit__(self, exception_type, exception_value, traceback):
+    def _recursive_decode(self, uri: str) -> str:
+        """Apply urllib.parse.unquote to uri until it can't be decoded any
+        further."""
+        decoded = urllib.parse.unquote(uri)
+
+        while decoded != uri:
+            uri = decoded
+            decoded = urllib.parse.unquote(uri)
+
+        return decoded
+
+    def __exit__(self, exception_type: Optional[Type[BaseException]],
+                 exception_value: Optional[BaseException], traceback:
+                 Optional[TracebackType]) -> None:
         if self.file_handle:
             self.file_handle.close()

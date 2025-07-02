@@ -4,10 +4,10 @@ build-backend = "hatchling.build"
 
 [project]
 name = "keygrep"
-version = "0.0.2"
+version = "0.0.3"
 description = "Red team ssh key discovery utility"
 readme = "README.md"
-requires-python = ">=3.8"
+requires-python = ">=3.9"
 license-files = ["LICENSE"]
 authors = [
     { name = "Adam Reiser", email = "reiser@defensivecomputing.io" }
@@ -16,7 +16,6 @@ classifiers = [
     "Intended Audience :: System Administrators",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3 :: Only",
-    "Programming Language :: Python :: 3.8",
     "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
@@ -39,3 +38,7 @@ keygrep = "keygrep.cli:main"
 [project.urls]
 "Homepage" = "https://github.com/cisco-open/keygrep"
 "Bug Tracker" = "https://github.com/cisco-open/keygrep/issues"
+
+[tool.mypy]
+files = ["src", "tests"]
+strict = true
