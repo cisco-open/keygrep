@@ -42,4 +42,3 @@ keygrep = "keygrep.cli:main"
 [tool.mypy]
 files = ["src", "tests"]
 strict = true
-disallow_untyped_decorators = false
