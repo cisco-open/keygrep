@@ -23,18 +23,15 @@ import re
 import tempfile
 import subprocess
 import unicodedata
-import functools
+from functools import cache
 import itertools
 from pathlib import Path
 from typing import Union, Optional, IO, Type, Dict, Callable, Any
 from types import TracebackType
 
 
-# Python 3.8 compatible TypeAlias
 StrPath = Union[str, os.PathLike[str]]
 
-# Python 3.8 fallback to lru_cache
-cache = getattr(functools, "cache", functools.lru_cache(maxsize=None))
 
 def walk(path: StrPath, func: Callable[[StrPath], None]) -> None:
     """Runs the given function against each file discovered under the
@@ -124,13 +121,14 @@ def dsa_key_support() -> bool:
     return any(line.strip() == "ssh-dss" for line in ssh_process.stdout.splitlines())
 
 def remove_path_prefix(path: StrPath, prefix: StrPath="") -> str:
-    """Removes the prefix from the provided path if applicable. Uses try/except
-    instead of PurePath.is_relative_to for 3.8 compatibility.  Returns a string
-    so that the resulting object is JSON-serializable."""
-    try:
-        return str(Path(path).relative_to(prefix))
-    except ValueError:
-        return str(path)
+    """Removes the prefix from the provided path if applicable. Returns a
+    string so that the resulting object is JSON-serializable."""
+
+    path, prefix = Path(path), Path(prefix)
+
+    if path.is_relative_to(prefix):
+        return str(path.relative_to(prefix))
+    return str(path)
 
 class NumericOpen():
     """Sanitizes the path "target_name" to a file name and writes it to the
@@ -180,7 +178,7 @@ class NumericOpen():
         name = unicodedata.normalize("NFKD", name)
 
         # Convert path separators into underscores
-        name = name.replace(os.path.sep, "_")
+        name = name.replace("/", "_").replace("\\", "_")
 
         # Convert whitespace into hyphens
         name = re.sub(r"[\s]", "-", name)
