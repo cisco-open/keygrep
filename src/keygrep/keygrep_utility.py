@@ -26,11 +26,9 @@ import unicodedata
 from functools import cache
 import itertools
 from pathlib import Path
-from typing import Union, Optional, IO, Type, Dict, Callable, Any
+from typing import Optional, IO, Type, Callable
 from types import TracebackType
-
-
-StrPath = Union[str, os.PathLike[str]]
+from .types import StrPath, PublicKeyRecord, PrivateKeyRecord
 
 
 def walk(path: StrPath, func: Callable[[StrPath], None]) -> None:
@@ -47,14 +45,22 @@ def walk(path: StrPath, func: Callable[[StrPath], None]) -> None:
                     continue
                 func(Path(dirpath, fname))
 
-def get_privkey_data(privkey_string: str) -> Dict[str, Any]:
-    """Returns a dict with the public key, fingerprint, encryption status, and
-    a list of comment strings for the provided private key. If these cannot be
-    determined, then the private key is either an encrypted PKCS8/PEM key, or
-    is malformed. In either of these cases, the the public key returned will be
-    None."""
+def get_privkey_data(privkey_string: str) -> PrivateKeyRecord:
+    """Returns a PrivateKeyRecord with the public key, fingerprint, encryption
+    status, and comment strings for the provided private key. If these cannot
+    be determined, then the private key is either an encrypted PKCS8/PEM key,
+    or is malformed. In either of these cases, the the public key returned will
+    be None."""
 
-    key_data: Dict[str, Any] = {"encrypted": False, "pub": None, "sha256": None, "comments": []}
+    key_data: PrivateKeyRecord = {
+        "encrypted": False,
+        "priv": privkey_string,
+        "pub": None,
+        "sha256": None,
+        "comments": [],
+        "pubkey_locations": {},
+        "privkey_locations": {}
+    }
 
     with tempfile.NamedTemporaryFile(mode="w") as key_file:
         key_file.write(privkey_string)
@@ -96,11 +102,16 @@ def get_privkey_data(privkey_string: str) -> Dict[str, Any]:
 
     return key_data
 
-def get_pubkey_data(pubkey_string: str) -> Dict[str, Optional[str]]:
-    """Returns a dict with the SHA256 sum (without key size or comments) from
-    the provided public key string."""
+def get_pubkey_data(pubkey_string: str) -> PublicKeyRecord:
+    """Returns a PublicKeyRecord from the provided public key string. If the
+    fingerprint cannot be determined, the key is malformed."""
 
-    key_data: Dict[str, Any] = {"sha256": None}
+    key_data: PublicKeyRecord = {
+        "pub": pubkey_string,
+        "sha256": None,
+        "comments": [],
+        "pubkey_locations": {}
+    }
 
     with tempfile.NamedTemporaryFile(mode="w") as key_file:
         key_file.write(pubkey_string)
@@ -109,6 +120,10 @@ def get_pubkey_data(pubkey_string: str) -> Dict[str, Optional[str]]:
         keygen_process = subprocess.run(["ssh-keygen", "-l", "-f", key_file.name], capture_output=True, text=True, check=False)
         if keygen_process.returncode == 0:
             key_data["sha256"] = " ".join(keygen_process.stdout.split(" ")[1:2])
+            # Keychain doesn't capture public key comments, but record them if present
+            comment = " ".join(keygen_process.stdout.split(" ")[2:-1])
+            if comment not in ["", "no comment"]:
+                key_data["comments"].append(comment)
 
     return key_data
 

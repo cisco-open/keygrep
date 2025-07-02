@@ -24,19 +24,18 @@ import csv
 import logging
 import textwrap
 from pathlib import Path
-from typing import Dict, List, Pattern, Union, Any
+from typing import List, Pattern
 from .keygrep_utility import walk, NumericOpen, get_pubkey_data, get_privkey_data, remove_path_prefix
+from .types import StrPath, PublicKeyRecord, PrivateKeyRecord
 
 __all__ = ["KeyChain"]
 
-# Python 3.8 compatible TypeAlias
-StrPath = Union[str, os.PathLike[str]]
 
 class KeyChain:
     """Class containing all discovered keys and derived information."""
     def __init__(self, output_dir: StrPath = "", path_prefix: StrPath = "", include_mangled: bool = False) -> None:
-        self.private_keys: List[Dict[str, Any]] = []
-        self.public_keys: List[Dict[str, Any]] = []
+        self.private_keys: List[PrivateKeyRecord] = []
+        self.public_keys: List[PublicKeyRecord] = []
 
         self.output_dir: Path = Path(output_dir).expanduser()
 
@@ -73,7 +72,7 @@ class KeyChain:
         keychain_dict = {"private_keys": self.private_keys, "public_keys": self.public_keys}
 
         try:
-            with open(Path(path), "w", encoding="utf-8") as state_file:
+            with open(path, "w", encoding="utf-8") as state_file:
                 json.dump(keychain_dict, state_file)
 
         except IOError:
@@ -133,8 +132,9 @@ class KeyChain:
         """Dump public keys"""
 
         try:
-            for filename in os.listdir(Path(self.output_dir, "public")):
-                Path.unlink(Path(self.output_dir, "public", filename))
+            for filename in Path(self.output_dir, "public").iterdir():
+                if filename.is_file():
+                    Path(self.output_dir, "public", filename).unlink()
         except FileNotFoundError:
             pass
 
@@ -150,8 +150,9 @@ class KeyChain:
         """Dump private keys"""
 
         try:
-            for filename in os.listdir(Path(self.output_dir, "private")):
-                Path.unlink(Path(self.output_dir, "private", filename))
+            for filename in Path(self.output_dir, "private").iterdir():
+                if filename.is_file():
+                    Path(self.output_dir, "private", filename).unlink()
         except FileNotFoundError:
             pass
 
@@ -203,14 +204,11 @@ class KeyChain:
         # Remove path prefix
         found_in_path = remove_path_prefix(found_in_path, prefix=self.path_prefix)
 
-        key_data: Dict[str, Any] = {
-            "pub": key,
-            "sha256": None,
-            "comments": [],
-            "pubkey_locations": {found_in_path: [position]}
-        }
+        key_data: PublicKeyRecord = get_pubkey_data(key)
 
-        key_data.update(get_pubkey_data(key))
+        key_data.update({
+            "pubkey_locations": {found_in_path: [position]}}
+        )
 
         # If we can't calculate the fingerprint, the key is mangled/invalid
         if not key_data["sha256"] and not self.include_mangled:
@@ -277,17 +275,11 @@ class KeyChain:
         # Remove path prefix
         found_in_path = remove_path_prefix(found_in_path, prefix=self.path_prefix)
 
-        key_data: Dict[str, Any] = {
-            "encrypted": False,
-            "sha256": None,
-            "comments": [],
-            "priv": key,
-            "pub": None,
-            "privkey_locations": {found_in_path: [position]},
-            "pubkey_locations": {},
-        }
+        key_data = get_privkey_data(key)
 
-        key_data.update(get_privkey_data(key))
+        key_data.update({
+            "privkey_locations": {found_in_path: [position]}
+        })
 
         # The key is mangled beyond automatic repair
         if not key_data["pub"] and not key_data["encrypted"]:
