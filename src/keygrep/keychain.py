@@ -23,6 +23,7 @@ import json
 import csv
 import logging
 import textwrap
+import tempfile
 from pathlib import Path
 from typing import List, Pattern
 from .keygrep_utility import walk, NumericOpen, get_pubkey_data, get_privkey_data, remove_path_prefix
@@ -71,12 +72,29 @@ class KeyChain:
 
         keychain_dict = {"private_keys": self.private_keys, "public_keys": self.public_keys}
 
-        try:
-            with open(path, "w", encoding="utf-8") as state_file:
-                json.dump(keychain_dict, state_file)
+        tmp_fd, tmp_path = None, None
 
-        except IOError:
-            logging.error("Cannot write state file at %s", path)
+        try:
+            write_dir = Path(path).parent
+            tmp_fd, tmp_path = tempfile.mkstemp(dir=write_dir)
+
+            with os.fdopen(tmp_fd, "w", encoding="utf-8") as tmp_file:
+                json.dump(keychain_dict, tmp_file, indent=4)
+                tmp_file.flush()
+                os.fsync(tmp_file.fileno())
+
+            # Atomically write the state file
+            os.replace(tmp_path, path)
+
+            # Sync directory metadata
+            dir_fd = os.open(write_dir, os.O_DIRECTORY)
+            os.fsync(dir_fd)
+            os.close(dir_fd)
+
+        except OSError as e:
+            if tmp_path:
+                Path(tmp_path).unlink(missing_ok=True)
+            logging.error("Error writing state file at %s: %s", path, e)
             raise
 
     def read_state(self, path: StrPath) -> None:
