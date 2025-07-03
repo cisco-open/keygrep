@@ -67,11 +67,13 @@ def get_privkey_data(privkey_string: str) -> PrivateKeyRecord:
         key_file.flush()
 
         # Determine if it's encrypted
-        keygen_process = subprocess.run(["ssh-keygen", "-P", "", "-y", "-f", key_file.name], capture_output=True, text=True, check=False)
+        keygen_process = subprocess.run(["ssh-keygen", "-P", "", "-y", "-f", key_file.name], capture_output=True, text=False, check=False)
 
         # ssh-keygen(1) doesn't provide informative return codes, so parse stderr (ew)
         if keygen_process.returncode == 0:
-            key_data["pub"] = keygen_process.stdout
+            # Key comments aren't necessarily valid UTF-8
+            key_data["pub"] = keygen_process.stdout.decode("utf-8", errors="ignore")
+
         elif "incorrect passphrase" in str(keygen_process.stderr).lower():
             key_data["encrypted"] = True
 
@@ -81,22 +83,23 @@ def get_privkey_data(privkey_string: str) -> PrivateKeyRecord:
             # Export public key to RFC4716 format
             keygen_process = subprocess.run(["ssh-keygen", "-P", "", "-e", "-m",
                                              "RFC4716", "-f", key_file.name],
-                                            capture_output=True, text=True, check=False)
+                                            capture_output=True, text=False, check=False)
 
             if keygen_process.returncode == 0:
-                with tempfile.NamedTemporaryFile(mode="w") as ssh2_key_file:
+                with tempfile.NamedTemporaryFile(mode="wb") as ssh2_key_file:
                     ssh2_key_file.write(keygen_process.stdout)
                     ssh2_key_file.flush()
                     # Import public key to OpenSSH format
-                    keygen_process = subprocess.run(["ssh-keygen", "-i", "-m", "RFC4716", "-f", ssh2_key_file.name], capture_output=True, text=True, check=False)
+                    keygen_process = subprocess.run(["ssh-keygen", "-i", "-m", "RFC4716", "-f", ssh2_key_file.name], capture_output=True, text=False, check=False)
                     if keygen_process.returncode == 0:
-                        key_data["pub"] = keygen_process.stdout
+                        key_data["pub"] = keygen_process.stdout.decode("utf-8", errors="ignore")
 
-        keygen_process = subprocess.run(["ssh-keygen", "-l", "-f", key_file.name], capture_output=True, text=True, check=False)
+        keygen_process = subprocess.run(["ssh-keygen", "-l", "-f", key_file.name], capture_output=True, text=False, check=False)
 
         if keygen_process.returncode == 0:
-            key_data["sha256"] = " ".join(keygen_process.stdout.split(" ")[1:2])
-            comment = " ".join(keygen_process.stdout.split(" ")[2:-1])
+            output = keygen_process.stdout.decode("utf-8", errors="ignore")
+            key_data["sha256"] = " ".join(output.split(" ")[1:2])
+            comment = " ".join(output.split(" ")[2:-1])
             if comment not in ["", "no comment"]:
                 key_data["comments"].append(comment)
 
@@ -117,11 +120,12 @@ def get_pubkey_data(pubkey_string: str) -> PublicKeyRecord:
         key_file.write(pubkey_string)
         key_file.flush()
 
-        keygen_process = subprocess.run(["ssh-keygen", "-l", "-f", key_file.name], capture_output=True, text=True, check=False)
+        keygen_process = subprocess.run(["ssh-keygen", "-l", "-f", key_file.name], capture_output=True, text=False, check=False)
         if keygen_process.returncode == 0:
-            key_data["sha256"] = " ".join(keygen_process.stdout.split(" ")[1:2])
-            # Keychain doesn't capture public key comments, but record them if present
-            comment = " ".join(keygen_process.stdout.split(" ")[2:-1])
+            output = keygen_process.stdout.decode("utf-8", errors="ignore")
+            key_data["sha256"] = " ".join(output.split(" ")[1:2])
+            # KeyChain doesn't capture public key comments, but record them if present
+            comment = " ".join(output.split(" ")[2:-1])
             if comment not in ["", "no comment"]:
                 key_data["comments"].append(comment)
 

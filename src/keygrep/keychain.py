@@ -131,53 +131,47 @@ class KeyChain:
     def write_public_keys(self) -> None:
         """Dump public keys"""
 
-        try:
-            for filename in Path(self.output_dir, "public").iterdir():
-                if filename.is_file():
-                    Path(self.output_dir, "public", filename).unlink()
-        except FileNotFoundError:
-            pass
+        pub_dir = Path(self.output_dir, "public")
 
-        dest_dir = Path(self.output_dir, "public")
-        os.makedirs(dest_dir, mode=0o700, exist_ok=True)
+        if pub_dir.is_dir():
+            for filename in pub_dir.iterdir():
+                if filename.is_file():
+                    filename.unlink(missing_ok=True)
+
+        os.makedirs(pub_dir, mode=0o700, exist_ok=True)
 
         for key in self.public_keys:
             # Use the lexically first filename where the key was found
-            with NumericOpen(sorted(key["pubkey_locations"].keys())[0], dest_dir) as key_out:
+            with NumericOpen(sorted(key["pubkey_locations"].keys())[0], pub_dir) as key_out:
                 key_out.write(key.get("pub", ""))
 
     def write_private_keys(self) -> None:
         """Dump private keys"""
 
-        try:
-            for filename in Path(self.output_dir, "private").iterdir():
-                if filename.is_file():
-                    Path(self.output_dir, "private", filename).unlink()
-        except FileNotFoundError:
-            pass
+        priv_dir = Path(self.output_dir, "private")
 
-        dest_dir = Path(self.output_dir, "private")
-        os.makedirs(dest_dir, mode=0o700, exist_ok=True)
+        if priv_dir.is_dir():
+            for filename in priv_dir.iterdir():
+                if filename.is_file():
+                    filename.unlink(missing_ok=True)
+
+        os.makedirs(priv_dir, mode=0o700, exist_ok=True)
 
         for key in self.private_keys:
             # Use the lexically first filename where the key was found
-            with NumericOpen(sorted(key["privkey_locations"].keys())[0], dest_dir) as key_out:
+            with NumericOpen(sorted(key["privkey_locations"].keys())[0], priv_dir) as key_out:
                 key_out.write(key.get("priv", ""))
 
     def find_privkeys_in_file(self, path: StrPath) -> None:
         """Find and parse all private keys in the file at path."""
         try:
             with open(path, "rb") as inf:
-                try:
-                    txt = mmap.mmap(inf.fileno(), 0, access=mmap.ACCESS_READ)
-                    key_matches = re.finditer(self.private_key_pattern, txt)
+                if os.fstat(inf.fileno()).st_size != 0:
+                    with mmap.mmap(inf.fileno(), 0, access=mmap.ACCESS_READ) as txt:
+                        key_matches = re.finditer(self.private_key_pattern, txt)
 
-                    for key_match in key_matches:
-                        self.parse_private_key(key_match, path, key_match.start())
-
-                # Zero length files
-                except ValueError:
-                    pass
+                        for key_match in key_matches:
+                            self.parse_private_key(key_match, path, key_match.start())
 
         except IOError:
             logging.warning("IO error reading %s", path)
@@ -186,14 +180,12 @@ class KeyChain:
         """Find and parse all public keys in the file at path."""
         try:
             with open(path, "rb") as inf:
-                try:
-                    txt = mmap.mmap(inf.fileno(), 0, access=mmap.ACCESS_READ)
-                    key_matches = re.finditer(self.public_key_pattern, txt)
-                    for key_match in key_matches:
-                        self.parse_public_key(key_match.group(0).decode("utf-8"), path, key_match.start())
-                except ValueError:
-                    # Zero length files
-                    pass
+                if os.fstat(inf.fileno()).st_size != 0:
+                    with mmap.mmap(inf.fileno(), 0, access=mmap.ACCESS_READ) as txt:
+                        key_matches = re.finditer(self.public_key_pattern, txt)
+
+                        for key_match in key_matches:
+                            self.parse_public_key(key_match.group(0).decode("utf-8", errors="ignore"), path, key_match.start())
 
         except IOError:
             logging.warning("IO error reading %s", path)
@@ -242,7 +234,7 @@ class KeyChain:
         results to self.private_keys."""
 
         # inner_key is the interior of the -----BEGIN...----- and -----END...----- blocks
-        inner_key = full_key.group(2).decode("utf-8")
+        inner_key = full_key.group(2).decode("utf-8", errors="ignore")
 
         # Find and remove headers (Proc-Type, DEK-Info) if present from inner_key
         # We assume that even for mangled keys, these will end with a (possibly escaped) newline or
@@ -263,8 +255,8 @@ class KeyChain:
         # Standardize line length
         inner_key = "\n".join(textwrap.wrap(inner_key, width=64))
 
-        affixes = (f"""-----BEGIN{full_key.group(1).decode("utf-8")}PRIVATE KEY-----""",
-                   f"""-----END{full_key.group(1).decode("utf-8")}PRIVATE KEY-----""")
+        affixes = (f"""-----BEGIN{full_key.group(1).decode("utf-8", errors="ignore")}PRIVATE KEY-----""",
+                   f"""-----END{full_key.group(1).decode("utf-8", errors="ignore")}PRIVATE KEY-----""")
 
         # Re-insert headers with correct newlines
         if len(headers) > 0:

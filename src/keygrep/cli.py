@@ -80,10 +80,11 @@ def main() -> None:
 
     try:
         for path in args.p:
-            if not Path(path).exists():
+            if Path(path).exists():
+                findings.load_private_keys(path)
+                findings.load_public_keys(path)
+            else:
                 logging.warning("Path %s does not exist", path)
-            findings.load_private_keys(path)
-            findings.load_public_keys(path)
 
     # If interrupted/exception, write whatever we have
     finally:
