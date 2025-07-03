@@ -21,8 +21,10 @@ jobs:
         python-version: ${{ matrix.python-version }}
     - name: Install dependencies
       run: |
-        echo "Testing if ssh-keygen is present"
-        command -v ssh-keygen
+        if ! command -v ssh-keygen; then
+          echo "ssh-keygen is required" >&2
+          exit 1
+        fi
         ssh -V
         python -m pip install --upgrade pip
         python -m pip install nox pytest
