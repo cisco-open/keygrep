@@ -86,11 +86,6 @@ class KeyChain:
             # Atomically write the state file
             os.replace(tmp_path, path)
 
-            # Sync directory metadata
-            dir_fd = os.open(write_dir, os.O_DIRECTORY)
-            os.fsync(dir_fd)
-            os.close(dir_fd)
-
         except OSError as e:
             if tmp_path:
                 Path(tmp_path).unlink(missing_ok=True)
@@ -160,7 +155,7 @@ class KeyChain:
 
         for key in self.public_keys:
             # Use the lexically first filename where the key was found
-            with NumericOpen(sorted(key["pubkey_locations"].keys())[0], pub_dir) as key_out:
+            with NumericOpen(sorted(key["pubkey_locations"].keys())[0], pub_dir, mode=0o644) as key_out:
                 key_out.write(key.get("pub", ""))
 
     def write_private_keys(self) -> None:
@@ -191,8 +186,8 @@ class KeyChain:
                         for key_match in key_matches:
                             self.parse_private_key(key_match, path, key_match.start())
 
-        except IOError:
-            logging.warning("IO error reading %s", path)
+        except OSError as e:
+            logging.warning("Error scanning %s: %s", path, e)
 
     def find_pubkeys_in_file(self, path: StrPath) -> None:
         """Find and parse all public keys in the file at path."""
@@ -205,8 +200,8 @@ class KeyChain:
                         for key_match in key_matches:
                             self.parse_public_key(key_match.group(0).decode("utf-8", errors="ignore"), path, key_match.start())
 
-        except IOError:
-            logging.warning("IO error reading %s", path)
+        except OSError as e:
+            logging.warning("Error scanning %s: %s", path, e)
 
     def parse_public_key(self, key: str, found_in_path: StrPath, position: int =-1) -> None:
         """Parses a single public key block. Does not perform unmangling."""

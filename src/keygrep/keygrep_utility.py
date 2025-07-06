@@ -154,36 +154,37 @@ class NumericOpen():
     directory "path". Typical usage is that "target_name" is a directory tree,
     which is flattened into a single file. If the destination file exists,
     appends an ascending hyphenated numeric value to the name before writing
-    it. Creates the directory "path" mode 0700 if it doesn't exist."""
+    it."""
 
-    def __init__(self, target_name: StrPath, path: StrPath, encoding: str="utf-8"):
+    def __init__(self, target_name: StrPath, path: StrPath, mode: int=0o600, encoding: str="utf-8"):
         self.path = Path(path)
         self.file_handle: Optional[IO[str]] = None
         self.encoding: str = encoding
         self.target_name: str = str(target_name)
+        self.mode: int = mode
 
     def __enter__(self) -> IO[str]:
 
-        os.makedirs(self.path, mode=0o700, exist_ok=True)
-        max_len = os.pathconf(self.path, "PC_NAME_MAX")
+        system_max_len = os.pathconf(self.path, "PC_NAME_MAX")
+        max_len = system_max_len
         sanitized_name = self._sanitize_filename(self.target_name)
 
         try:
             truncated_name = sanitized_name[0:max_len]
-            fd = os.open(Path(self.path, truncated_name), os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+            fd = os.open(Path(self.path, truncated_name), os.O_CREAT | os.O_EXCL | os.O_WRONLY, self.mode)
             self.file_handle = os.fdopen(fd, "w", encoding=self.encoding)
             return self.file_handle
 
         except FileExistsError:
             for i in itertools.count(start=2, step=1):
                 try:
-                    max_len = os.pathconf(self.path, "PC_NAME_MAX") - len(str(i)) - 1
+                    max_len = system_max_len - len(str(i)) - 1
                     truncated_name = sanitized_name[0:max_len] + "-" + str(i)
-                    fd = os.open(Path(self.path, truncated_name), os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+                    fd = os.open(Path(self.path, truncated_name), os.O_CREAT | os.O_EXCL | os.O_WRONLY, self.mode)
                     self.file_handle = os.fdopen(fd, "w", encoding=self.encoding)
                     return self.file_handle
                 except FileExistsError:
-                    pass
+                    continue
 
         raise OSError
 
