@@ -86,10 +86,10 @@ class KeyChain:
             # Atomically write the state file
             os.replace(tmp_path, path)
 
-        except OSError as e:
+        except (OSError, PermissionError):
             if tmp_path:
                 Path(tmp_path).unlink(missing_ok=True)
-            logging.error("Error writing state file at %s: %s", path, e)
+            logging.exception("Error writing state file at %s", path)
             raise
 
     def read_state(self, path: StrPath) -> None:
@@ -106,11 +106,11 @@ class KeyChain:
             logging.info("No existing state found at %s", path)
 
         except (json.decoder.JSONDecodeError, KeyError, UnicodeDecodeError):
-            logging.error("%s is not a state file", path)
+            logging.exception("%s is not a state file", path)
             raise
 
-        except IOError:
-            logging.error("Cannot read state file at %s", path)
+        except (OSError, PermissionError):
+            logging.exception("Error reading state file at %s", path)
             raise
 
     def load_public_keys(self, path: StrPath) -> None:
@@ -186,7 +186,7 @@ class KeyChain:
                         for key_match in key_matches:
                             self.parse_private_key(key_match, path, key_match.start())
 
-        except OSError as e:
+        except (OSError, PermissionError) as e:
             logging.warning("Error scanning %s: %s", path, e)
 
     def find_pubkeys_in_file(self, path: StrPath) -> None:
@@ -200,7 +200,7 @@ class KeyChain:
                         for key_match in key_matches:
                             self.parse_public_key(key_match.group(0).decode("utf-8", errors="ignore"), path, key_match.start())
 
-        except OSError as e:
+        except (OSError, PermissionError) as e:
             logging.warning("Error scanning %s: %s", path, e)
 
     def parse_public_key(self, key: str, found_in_path: StrPath, position: int =-1) -> None:

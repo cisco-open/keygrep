@@ -54,7 +54,7 @@ def get_privkey_data(privkey_string: str) -> PrivateKeyRecord:
 
     key_data: PrivateKeyRecord = {
         "encrypted": False,
-        "priv": privkey_string,
+        "priv": privkey_string.rstrip("\n"),
         "pub": None,
         "sha256": None,
         "comments": [],
@@ -72,7 +72,7 @@ def get_privkey_data(privkey_string: str) -> PrivateKeyRecord:
         # ssh-keygen(1) doesn't provide informative return codes, so parse stderr (ew)
         if keygen_process.returncode == 0:
             # Key comments aren't necessarily valid UTF-8
-            key_data["pub"] = keygen_process.stdout.decode("utf-8", errors="ignore")
+            key_data["pub"] = keygen_process.stdout.decode("utf-8", errors="ignore").rstrip("\n")
 
         elif "incorrect passphrase" in str(keygen_process.stderr).lower():
             key_data["encrypted"] = True
@@ -92,7 +92,7 @@ def get_privkey_data(privkey_string: str) -> PrivateKeyRecord:
                     # Import public key to OpenSSH format
                     keygen_process = subprocess.run(["ssh-keygen", "-i", "-m", "RFC4716", "-f", ssh2_key_file.name], capture_output=True, text=False, check=False)
                     if keygen_process.returncode == 0:
-                        key_data["pub"] = keygen_process.stdout.decode("utf-8", errors="ignore")
+                        key_data["pub"] = keygen_process.stdout.decode("utf-8", errors="ignore").rstrip("\n")
 
         keygen_process = subprocess.run(["ssh-keygen", "-l", "-f", key_file.name], capture_output=True, text=False, check=False)
 
