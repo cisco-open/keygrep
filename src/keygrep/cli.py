@@ -75,7 +75,7 @@ def main() -> None:
     if args.i:
         try:
             findings.read_state(args.i)
-        except (json.decoder.JSONDecodeError, IOError, KeyError, UnicodeDecodeError):
+        except (json.decoder.JSONDecodeError, OSError, KeyError, UnicodeDecodeError, PermissionError):
             sys.exit(1)
 
     try:
