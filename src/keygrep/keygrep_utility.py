@@ -170,8 +170,7 @@ class NumericOpen():
         sanitized_name = self._sanitize_filename(self.target_name)
 
         try:
-            truncated_name = sanitized_name[0:max_len]
-            fd = os.open(Path(self.path, truncated_name), os.O_CREAT | os.O_EXCL | os.O_WRONLY, self.mode)
+            fd = os.open(Path(self.path, sanitized_name[0:max_len]), os.O_CREAT | os.O_EXCL | os.O_WRONLY, self.mode)
             self.file_handle = os.fdopen(fd, "w", encoding=self.encoding)
             return self.file_handle
 
@@ -179,14 +178,13 @@ class NumericOpen():
             for i in itertools.count(start=2, step=1):
                 try:
                     max_len = system_max_len - len(str(i)) - 1
-                    truncated_name = sanitized_name[0:max_len] + "-" + str(i)
-                    fd = os.open(Path(self.path, truncated_name), os.O_CREAT | os.O_EXCL | os.O_WRONLY, self.mode)
+                    fd = os.open(Path(self.path, sanitized_name[0:max_len] + "-" + str(i)), os.O_CREAT | os.O_EXCL | os.O_WRONLY, self.mode)
                     self.file_handle = os.fdopen(fd, "w", encoding=self.encoding)
                     return self.file_handle
                 except FileExistsError:
                     continue
 
-        raise OSError
+        raise RuntimeError(f"Failed to create a unique file in {self.path!r}")
 
     def _sanitize_filename(self, target_name: str) -> str:
         """Sanitizes the input filename without truncating."""

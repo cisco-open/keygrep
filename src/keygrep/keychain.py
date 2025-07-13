@@ -136,7 +136,7 @@ class KeyChain:
 
         # Write private key CSV output
         with open(Path(self.output_dir, "private.csv"), "w", encoding="utf-8") as outf:
-            key_writer = csv.writer(outf, delimiter=",", quotechar='"', quoting=csv.QUOTE_MINIMAL)
+            key_writer = csv.writer(outf, dialect="unix", delimiter=",", quotechar='"', quoting=csv.QUOTE_MINIMAL)
             key_writer.writerow(["Encrypted", "sha256", "public key", "number of places private key found", "number of places public key found"])
             for key in self.private_keys:
                 key_writer.writerow([key["encrypted"], key["sha256"], key["pub"], sum(len(k) for k in key["privkey_locations"].values()), sum(len(k) for k in key["pubkey_locations"].values())])
