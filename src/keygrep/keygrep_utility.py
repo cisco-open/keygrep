@@ -164,7 +164,6 @@ class NumericOpen():
         self.mode: int = mode
 
     def __enter__(self) -> IO[str]:
-
         system_max_len = os.pathconf(self.path, "PC_NAME_MAX")
         max_len = system_max_len
         sanitized_name = self._sanitize_filename(self.target_name)
