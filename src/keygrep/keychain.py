@@ -89,7 +89,7 @@ class KeyChain:
         except (OSError, PermissionError):
             if tmp_path:
                 Path(tmp_path).unlink(missing_ok=True)
-            logging.exception("Error writing state file at %s", path)
+            logging.error("Error writing state file at %s", path)
             raise
 
     def read_state(self, path: StrPath) -> None:
@@ -106,11 +106,11 @@ class KeyChain:
             logging.info("No existing state found at %s", path)
 
         except (json.decoder.JSONDecodeError, KeyError, UnicodeDecodeError):
-            logging.exception("%s is not a state file", path)
+            logging.error("%s is not a state file", path)
             raise
 
         except (OSError, PermissionError):
-            logging.exception("Error reading state file at %s", path)
+            logging.error("Error reading state file at %s", path)
             raise
 
     def load_public_keys(self, path: StrPath) -> None:
