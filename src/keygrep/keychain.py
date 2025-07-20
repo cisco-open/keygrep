@@ -23,6 +23,7 @@ import json
 import csv
 import logging
 import textwrap
+import tempfile
 from pathlib import Path
 from typing import List, Pattern
 from .keygrep_utility import walk, NumericOpen, get_pubkey_data, get_privkey_data, remove_path_prefix
@@ -71,12 +72,24 @@ class KeyChain:
 
         keychain_dict = {"private_keys": self.private_keys, "public_keys": self.public_keys}
 
-        try:
-            with open(path, "w", encoding="utf-8") as state_file:
-                json.dump(keychain_dict, state_file)
+        tmp_fd, tmp_path = None, None
 
-        except IOError:
-            logging.error("Cannot write state file at %s", path)
+        try:
+            write_dir = Path(path).parent
+            tmp_fd, tmp_path = tempfile.mkstemp(dir=write_dir)
+
+            with os.fdopen(tmp_fd, "w", encoding="utf-8") as tmp_file:
+                json.dump(keychain_dict, tmp_file, indent=4)
+                tmp_file.flush()
+                os.fsync(tmp_file.fileno())
+
+            # Atomically write the state file
+            os.replace(tmp_path, path)
+
+        except (OSError, PermissionError):
+            if tmp_path:
+                Path(tmp_path).unlink(missing_ok=True)
+            logging.error("Error writing state file at %s", path)
             raise
 
     def read_state(self, path: StrPath) -> None:
@@ -96,8 +109,8 @@ class KeyChain:
             logging.error("%s is not a state file", path)
             raise
 
-        except IOError:
-            logging.error("Cannot read state file at %s", path)
+        except (OSError, PermissionError):
+            logging.error("Error reading state file at %s", path)
             raise
 
     def load_public_keys(self, path: StrPath) -> None:
@@ -123,7 +136,7 @@ class KeyChain:
 
         # Write private key CSV output
         with open(Path(self.output_dir, "private.csv"), "w", encoding="utf-8") as outf:
-            key_writer = csv.writer(outf, delimiter=",", quotechar='"', quoting=csv.QUOTE_MINIMAL)
+            key_writer = csv.writer(outf, dialect="unix", delimiter=",", quotechar='"', quoting=csv.QUOTE_MINIMAL)
             key_writer.writerow(["Encrypted", "sha256", "public key", "number of places private key found", "number of places public key found"])
             for key in self.private_keys:
                 key_writer.writerow([key["encrypted"], key["sha256"], key["pub"], sum(len(k) for k in key["privkey_locations"].values()), sum(len(k) for k in key["pubkey_locations"].values())])
@@ -131,72 +144,64 @@ class KeyChain:
     def write_public_keys(self) -> None:
         """Dump public keys"""
 
-        try:
-            for filename in Path(self.output_dir, "public").iterdir():
-                if filename.is_file():
-                    Path(self.output_dir, "public", filename).unlink()
-        except FileNotFoundError:
-            pass
+        pub_dir = Path(self.output_dir, "public")
 
-        dest_dir = Path(self.output_dir, "public")
-        os.makedirs(dest_dir, mode=0o700, exist_ok=True)
+        if pub_dir.is_dir():
+            for filename in pub_dir.iterdir():
+                if filename.is_file():
+                    filename.unlink(missing_ok=True)
+
+        os.makedirs(pub_dir, mode=0o700, exist_ok=True)
 
         for key in self.public_keys:
             # Use the lexically first filename where the key was found
-            with NumericOpen(sorted(key["pubkey_locations"].keys())[0], dest_dir) as key_out:
+            with NumericOpen(sorted(key["pubkey_locations"].keys())[0], pub_dir, mode=0o644) as key_out:
                 key_out.write(key.get("pub", ""))
 
     def write_private_keys(self) -> None:
         """Dump private keys"""
 
-        try:
-            for filename in Path(self.output_dir, "private").iterdir():
-                if filename.is_file():
-                    Path(self.output_dir, "private", filename).unlink()
-        except FileNotFoundError:
-            pass
+        priv_dir = Path(self.output_dir, "private")
 
-        dest_dir = Path(self.output_dir, "private")
-        os.makedirs(dest_dir, mode=0o700, exist_ok=True)
+        if priv_dir.is_dir():
+            for filename in priv_dir.iterdir():
+                if filename.is_file():
+                    filename.unlink(missing_ok=True)
+
+        os.makedirs(priv_dir, mode=0o700, exist_ok=True)
 
         for key in self.private_keys:
             # Use the lexically first filename where the key was found
-            with NumericOpen(sorted(key["privkey_locations"].keys())[0], dest_dir) as key_out:
+            with NumericOpen(sorted(key["privkey_locations"].keys())[0], priv_dir) as key_out:
                 key_out.write(key.get("priv", ""))
 
     def find_privkeys_in_file(self, path: StrPath) -> None:
         """Find and parse all private keys in the file at path."""
         try:
             with open(path, "rb") as inf:
-                try:
-                    txt = mmap.mmap(inf.fileno(), 0, access=mmap.ACCESS_READ)
-                    key_matches = re.finditer(self.private_key_pattern, txt)
+                if os.fstat(inf.fileno()).st_size != 0:
+                    with mmap.mmap(inf.fileno(), 0, access=mmap.ACCESS_READ) as txt:
+                        key_matches = re.finditer(self.private_key_pattern, txt)
 
-                    for key_match in key_matches:
-                        self.parse_private_key(key_match, path, key_match.start())
+                        for key_match in key_matches:
+                            self.parse_private_key(key_match, path, key_match.start())
 
-                # Zero length files
-                except ValueError:
-                    pass
-
-        except IOError:
-            logging.warning("IO error reading %s", path)
+        except (OSError, PermissionError) as e:
+            logging.warning("Error scanning %s: %s", path, e)
 
     def find_pubkeys_in_file(self, path: StrPath) -> None:
         """Find and parse all public keys in the file at path."""
         try:
             with open(path, "rb") as inf:
-                try:
-                    txt = mmap.mmap(inf.fileno(), 0, access=mmap.ACCESS_READ)
-                    key_matches = re.finditer(self.public_key_pattern, txt)
-                    for key_match in key_matches:
-                        self.parse_public_key(key_match.group(0).decode("utf-8"), path, key_match.start())
-                except ValueError:
-                    # Zero length files
-                    pass
+                if os.fstat(inf.fileno()).st_size != 0:
+                    with mmap.mmap(inf.fileno(), 0, access=mmap.ACCESS_READ) as txt:
+                        key_matches = re.finditer(self.public_key_pattern, txt)
 
-        except IOError:
-            logging.warning("IO error reading %s", path)
+                        for key_match in key_matches:
+                            self.parse_public_key(key_match.group(0).decode("utf-8", errors="ignore"), path, key_match.start())
+
+        except (OSError, PermissionError) as e:
+            logging.warning("Error scanning %s: %s", path, e)
 
     def parse_public_key(self, key: str, found_in_path: StrPath, position: int =-1) -> None:
         """Parses a single public key block. Does not perform unmangling."""
@@ -242,7 +247,7 @@ class KeyChain:
         results to self.private_keys."""
 
         # inner_key is the interior of the -----BEGIN...----- and -----END...----- blocks
-        inner_key = full_key.group(2).decode("utf-8")
+        inner_key = full_key.group(2).decode("utf-8", errors="ignore")
 
         # Find and remove headers (Proc-Type, DEK-Info) if present from inner_key
         # We assume that even for mangled keys, these will end with a (possibly escaped) newline or
@@ -263,8 +268,8 @@ class KeyChain:
         # Standardize line length
         inner_key = "\n".join(textwrap.wrap(inner_key, width=64))
 
-        affixes = (f"""-----BEGIN{full_key.group(1).decode("utf-8")}PRIVATE KEY-----""",
-                   f"""-----END{full_key.group(1).decode("utf-8")}PRIVATE KEY-----""")
+        affixes = (f"""-----BEGIN{full_key.group(1).decode("utf-8", errors="ignore")}PRIVATE KEY-----""",
+                   f"""-----END{full_key.group(1).decode("utf-8", errors="ignore")}PRIVATE KEY-----""")
 
         # Re-insert headers with correct newlines
         if len(headers) > 0:

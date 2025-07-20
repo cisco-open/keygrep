@@ -75,15 +75,16 @@ def main() -> None:
     if args.i:
         try:
             findings.read_state(args.i)
-        except (json.decoder.JSONDecodeError, IOError, KeyError, UnicodeDecodeError):
+        except (json.decoder.JSONDecodeError, OSError, KeyError, UnicodeDecodeError, PermissionError):
             sys.exit(1)
 
     try:
         for path in args.p:
-            if not Path(path).exists():
+            if Path(path).exists():
+                findings.load_private_keys(path)
+                findings.load_public_keys(path)
+            else:
                 logging.warning("Path %s does not exist", path)
-            findings.load_private_keys(path)
-            findings.load_public_keys(path)
 
     # If interrupted/exception, write whatever we have
     finally:
