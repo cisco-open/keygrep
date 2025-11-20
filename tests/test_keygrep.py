@@ -14,6 +14,20 @@ def get_fpr(path: StrPath) -> str:
     keygen_process = subprocess.run(["ssh-keygen", "-l", "-f", Path(path)], capture_output=True, text=True, check=False)
     return " ".join(keygen_process.stdout.split(" ")[1:2])
 
+def test_mangled_encrypted_pem(tmp_path: Path) -> None:
+    """Test that several forms of mangled encrypted PEM are detected and
+    identified as the same key."""
+
+    kc = KeyChain(output_dir=tmp_path)
+    private_keys_dir = Path(__file__).parent / "test-keys/rsa_1_pw_transforms"
+    kc.load_private_keys(private_keys_dir)
+
+    # Encrypted PEM, so no SHA256
+    assert kc.private_keys[0]["sha256"] is None
+
+    # One key per file
+    assert len(kc.private_keys[0]["privkey_locations"]) == len(os.listdir(private_keys_dir))
+
 def test_empty_files(tmp_path: Path) -> None:
     """Test that empty files don't raise exceptions."""
     kc = KeyChain(output_dir=tmp_path, path_prefix=Path(__file__).parent)

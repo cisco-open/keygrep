@@ -2,9 +2,9 @@
 
 ## Red team oriented key finder and correlator
 
-Keygrep is a tool for searching and correlating ssh keys from text files in
-directory trees.  It can recover keys that appear in "mangled" formats, such as
-environment variables, .viminfo, and config files. It does not perform binary
+Keygrep is a tool for discovering and correlating ssh keys from text files in
+directory trees. It can recover keys that appear in "mangled" formats, such as
+environment variable dumps, .viminfo, and config files. It does not perform binary
 unpacking or cracking.
 
 ```
@@ -12,19 +12,21 @@ $ keygrep -h
 
 usage: keygrep [-h] [--include_mangled] [-p path] [-i state_file] [-s string] output_directory
 
-Searches the specified directories for public and private SSH keys, correlates them, and writes a report and all discovered keys to the output directory.
+Searches the specified directories for public and private SSH keys, correlates them, and writes a report and all discovered keys to the output
+directory.
 
 positional arguments:
   output_directory   Store extracted keys and report in this directory, overwriting previous output if any.
 
 options:
   -h, --help         show this help message and exit
-  --include_mangled  Include unrecovered "mangled" keys in results. Without this option, keygrep will log and ignore potentially recoverable public and private keys
-                     that it discovers. Sometimes these are redacted or malformed example keys (such as in docs), but they might be recoverable by hand.
+  --include_mangled  Include unrecovered "mangled" keys in results. Without this option, keygrep will log and ignore potentially recoverable public
+                     and private keys that it discovers. Sometimes these are redacted or malformed example keys that might be recoverable by hand.
                      Including this option may result in invalid key files.
   -p path            Add this to the list of paths to search for keys. May be used multiple times.
   -i state_file      Load public and private keys from this JSON state file if it exists and write to it on close.
-  -s string          Strip this leading string from the reported key location paths (e.g., if you're searching /tmp/inventory, you might set this to either /tmp or /tmp/inventory.) Note that this operates on the path only, not the filename. '~' will be expanded.
+  -s string          Strip this leading string from the reported key location paths (e.g., if you're searching /tmp/inventory, you might set this to
+                     either /tmp or /tmp/inventory.) Note that this operates on the path only, not the filename. '~' will be expanded.
 ```
 
 ### Installation
@@ -64,13 +66,13 @@ unique private key. The structure looks like this:
             "server key",
             "jbloggs@workstation-7"
         ],
-        "priv": "-----BEGIN OPENSSH PRIVATE KEY-----...-----END OPENSSH PRIVATE KEY-----\n",
+        "priv": "-----BEGIN OPENSSH PRIVATE KEY-----...-----END OPENSSH PRIVATE KEY-----",
         "pub": "ssh-rsa ...",
         "privkey_locations": {
             "/sample-data/ps_snippet.txt": [
                 590
             ],
-            "/sample-data/homes/jbloggs/.ssh/key": [
+            "/sample-data/homedirs/jbloggs/.ssh/key": [
                 0
             ]
         },
@@ -78,7 +80,7 @@ unique private key. The structure looks like this:
             "/sample-data/configs/terraform.tfvars.json": [
                 831
             ],
-            "/sample-data/homes/jbloggs/.ssh/key.pub": [
+            "/sample-data/homedirs/jbloggs/.ssh/key.pub": [
                 0
             ]
         }
@@ -113,7 +115,7 @@ This will produce more compact output that looks something like this:
 {
   "sha256": "SHA256:REoRXyGCovWtM87Lb/xUl3MaJQlPqB7SFLmqOBVtQ+k",
   "pubkey_locations": {
-    "/sample-data/homes/jbloggs/.ssh/key.pub": [
+    "/sample-data/homedirs/jbloggs/.ssh/key.pub": [
       0
     ],
     "/sample-data/configs/terraform.tfvars.json": [

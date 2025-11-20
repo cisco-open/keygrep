@@ -72,9 +72,9 @@ def get_privkey_data(privkey_string: str) -> PrivateKeyRecord:
         # ssh-keygen(1) doesn't provide informative return codes, so parse stderr (ew)
         if keygen_process.returncode == 0:
             # Key comments aren't necessarily valid UTF-8
-            key_data["pub"] = keygen_process.stdout.decode("utf-8", errors="ignore").rstrip("\n")
+            key_data["pub"] = keygen_process.stdout.decode("utf-8", errors="ignore").rstrip()
 
-        elif "incorrect passphrase" in str(keygen_process.stderr).lower():
+        elif "incorrect passphrase" in keygen_process.stderr.decode("utf-8", errors="ignore").lower():
             key_data["encrypted"] = True
 
             # If the key is encrypted and is OpenSSH formatted (not PEM/PKCS8), we
@@ -183,7 +183,7 @@ class NumericOpen():
                 except FileExistsError:
                     continue
 
-        raise RuntimeError(f"Failed to create a unique file in {self.path!r}")
+        raise RuntimeError(f"Failed to create a unique file at {self.path!r}")
 
     def _sanitize_filename(self, target_name: str) -> str:
         """Sanitizes the input filename without truncating."""

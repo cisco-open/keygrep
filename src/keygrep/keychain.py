@@ -94,24 +94,12 @@ class KeyChain:
 
     def read_state(self, path: StrPath) -> None:
         """Load the public and private keys from the state file at the given
-        path if it exists. Replaces any existing keys."""
+        path. Replaces any previously loaded keys."""
 
-        try:
-            with open(path, "r", encoding="utf-8") as state_file:
-                keychain_dict = json.load(state_file)
-                self.private_keys = keychain_dict["private_keys"]
-                self.public_keys = keychain_dict["public_keys"]
-
-        except FileNotFoundError:
-            logging.info("No existing state found at %s", path)
-
-        except (json.decoder.JSONDecodeError, KeyError, UnicodeDecodeError):
-            logging.error("%s is not a state file", path)
-            raise
-
-        except (OSError, PermissionError):
-            logging.error("Error reading state file at %s", path)
-            raise
+        with open(path, "r", encoding="utf-8") as state_file:
+            keychain_dict = json.load(state_file)
+            self.private_keys = keychain_dict["private_keys"]
+            self.public_keys = keychain_dict["public_keys"]
 
     def load_public_keys(self, path: StrPath) -> None:
         """Walk path and search text files under it for public keys."""
@@ -156,7 +144,7 @@ class KeyChain:
         for key in self.public_keys:
             # Use the lexically first filename where the key was found
             with NumericOpen(sorted(key["pubkey_locations"].keys())[0], pub_dir, mode=0o644) as key_out:
-                key_out.write(key.get("pub", ""))
+                key_out.write(key.get("pub", "").rstrip() + "\n")
 
     def write_private_keys(self) -> None:
         """Dump private keys"""
@@ -173,7 +161,7 @@ class KeyChain:
         for key in self.private_keys:
             # Use the lexically first filename where the key was found
             with NumericOpen(sorted(key["privkey_locations"].keys())[0], priv_dir) as key_out:
-                key_out.write(key.get("priv", ""))
+                key_out.write(key.get("priv", "").rstrip() + "\n")
 
     def find_privkeys_in_file(self, path: StrPath) -> None:
         """Find and parse all private keys in the file at path."""
@@ -241,20 +229,19 @@ class KeyChain:
         self.public_keys.append(key_data)
 
     def parse_private_key(self, full_key: re.Match[bytes], found_in_path: StrPath, position: int = -1) -> None:
-        """Parses a single key block. Performs fix-up transforms to restore
-        mangled keys (e.g., when a private key found in an environment
-        variable). Calculates fingerprints and appends a dictionary of the
-        results to self.private_keys."""
+        """Parses a single key block. Performs fix-ups to restore mangled keys
+        to parseable format. Calculates fingerprints and appends a dictionary
+        of the results to self.private_keys."""
 
         # inner_key is the interior of the -----BEGIN...----- and -----END...----- blocks
         inner_key = full_key.group(2).decode("utf-8", errors="ignore")
 
-        # Find and remove headers (Proc-Type, DEK-Info) if present from inner_key
-        # We assume that even for mangled keys, these will end with a (possibly escaped) newline or
-        # other non-escaped whitespace (typically a space), as with keys found in environment variables
+        # Find and remove headers (Proc-Type, DEK-Info) if present from inner_key.
+        # We make the assumption that even for mangled keys, these will end with either a (possibly escaped) newline or
+        # other, non-escaped, whitespace.
         inner_key = inner_key.replace("\\n", "\n").replace("\\\n", "\n")
-        headers: List[str] = list(filter(None, re.findall(r"^|\s([a-zA-Z0-9,\-]+: [\S]+)", inner_key, flags=re.M)))
-        inner_key = re.sub(r"^|\s[a-zA-Z0-9,\-]+: \S+", "", inner_key, flags=re.M).strip()
+        headers: List[str] = list(filter(None, re.findall(r"\s*([a-zA-Z0-9,\-]+: [\S]+)", inner_key, flags=re.M)))
+        inner_key = re.sub(r"[a-zA-Z0-9,\-]+: \S+", "", inner_key, flags=re.M).strip()
 
         # Special logic for viminfo
         inner_key = re.sub(r">\d+", "", inner_key)
@@ -302,7 +289,7 @@ class KeyChain:
 
             # Compare based on SHA256 excluding any comments
             # If we can't determine the fingerprint (due to mangled/invalid keys, or encrypted PEM/PKCS8 keys),
-			# treat the key as unique unless it is string-identical to an existing key
+            # treat the key as unique unless it is string-identical to an existing key
             if (key_data["sha256"] == existing_key["sha256"] and key_data["sha256"] is not None) or key_data["priv"] == existing_key["priv"]:
 
                 # If this is a cleartext duplicate of an encrypted key, replace the encrypted one

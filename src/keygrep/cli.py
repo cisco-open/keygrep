@@ -36,9 +36,9 @@ def main() -> None:
                         Without this option, keygrep will log and ignore
                         potentially recoverable public and private keys that it
                         discovers.  Sometimes these are redacted or malformed
-                        example keys (such as in docs), but they might be
-                        recoverable by hand. Including this option may result
-                        in invalid key files.""")
+                        example keys that might be recoverable by hand.
+                        Including this option may result in invalid key
+                        files.""")
 
     # Possible options to consider adding:
     # --only_encrypted (for cracking)
@@ -75,7 +75,14 @@ def main() -> None:
     if args.i:
         try:
             findings.read_state(args.i)
-        except (json.decoder.JSONDecodeError, OSError, KeyError, UnicodeDecodeError, PermissionError):
+            logging.info("Read state from %s", args.i)
+        except FileNotFoundError:
+            logging.info("No existing state found at %s", args.i)
+        except (json.decoder.JSONDecodeError, KeyError, UnicodeDecodeError):
+            logging.error("%s is not a state file", args.i)
+            sys.exit(1)
+        except PermissionError:
+            logging.error("Unable to read state from %s", args.i)
             sys.exit(1)
 
     try:
@@ -89,15 +96,15 @@ def main() -> None:
     # If interrupted/exception, write whatever we have
     finally:
         logging.info("Correlating keys...")
-
         findings.correlate_keys()
-        logging.info("Writing findings to %s", args.out_dir)
         findings.write_summary()
         findings.write_private_keys()
         findings.write_public_keys()
+        logging.info("Wrote findings to %s", args.out_dir)
         if args.i:
             try:
                 findings.write_state(args.i)
+                logging.info("Wrote state file to %s", args.i)
             except IOError:
                 sys.exit(1)
 
