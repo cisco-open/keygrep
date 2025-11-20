@@ -78,11 +78,11 @@ def main() -> None:
             logging.info("Read state from %s", args.i)
         except FileNotFoundError:
             logging.info("No existing state found at %s", args.i)
-        except (json.decoder.JSONDecodeError, KeyError, UnicodeDecodeError):
-            logging.error("%s is not a state file", args.i)
+        except (json.decoder.JSONDecodeError, KeyError, UnicodeDecodeError, IsADirectoryError, TypeError) as exc:
+            logging.error("%s is not a state file: %s", args.i, exc)
             sys.exit(1)
-        except PermissionError:
-            logging.error("Unable to read state from %s", args.i)
+        except PermissionError as exc:
+            logging.error("Unable to read state from %s: %s", args.i, exc)
             sys.exit(1)
 
     try:
@@ -105,8 +105,8 @@ def main() -> None:
             try:
                 findings.write_state(args.i)
                 logging.info("Wrote state file to %s", args.i)
-            except IOError:
-                sys.exit(1)
+            except OSError as exc:
+                logging.warning("Error writing state file %s: %s", args.i, exc)
 
 if __name__ == "__main__":
     main()
