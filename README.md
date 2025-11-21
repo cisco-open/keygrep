@@ -43,15 +43,15 @@ Search the `/sample-data` directory for keys and write the output to `findings/`
 
 ```
 $ keygrep -p /sample-data findings
-2025-06-02 19:46:04,845 - INFO  - Found key of length 1801 at position 590 in /sample-data/ps_snippet.txt
-2025-06-02 19:46:04,922 - INFO  - Found key of length 227 at position 0 in /sample-data/plain/ecdsa_pem
-2025-06-02 19:46:04,949 - INFO  - Found mangled key of length 82 at position 0 in /sample-data/plain/redacted_key
-2025-06-02 19:46:04,977 - INFO  - Found key of length 400 at position 0 in /sample-data/plain/ed25519
-2025-06-02 19:46:05,007 - INFO  - Found key of length 1801 at position 474 in /sample-data/homedirs/jbloggs/.viminfo
-2025-06-02 19:46:05,015 - INFO  - Found key of length 1801 at position 2326 in /sample-data/homedirs/jbloggs/.viminfo
-2025-06-02 19:46:05,032 - INFO  - Found key of length 1801 at position 1 in /sample-data/homedirs/jbloggs/tf.key
-2025-06-02 19:46:05,225 - INFO  - Correlating keys...
-2025-06-02 19:46:05,225 - INFO  - Writing findings to ./findings
+2025-11-20 23:16:42,578 - INFO  - Found key of length 1801 at position 590 in /sample-data/ps_snippet.txt
+2025-11-20 23:16:42,593 - INFO  - Found key of length 400 at position 0 in sample-data/plain/ed25519
+2025-11-20 23:16:42,602 - INFO  - Found key of length 227 at position 0 in /sample-data/plain/ecdsa_pem
+2025-11-20 23:16:42,651 - INFO  - Found mangled key of length 82 at position 0 in sample-data/plain/redacted_key
+2025-11-20 23:16:42,739 - INFO  - Found key of length 1801 at position 1 in sample-data/homedirs/jbloggs/tf.key
+2025-11-20 23:16:42,753 - INFO  - Found key of length 1801 at position 474 in sample-data/homedirs/jbloggs/.viminfo
+2025-11-20 23:16:42,765 - INFO  - Found key of length 1801 at position 2326 in sample-data/homedirs/jbloggs/.viminfo
+2025-11-20 23:16:42,920 - INFO  - Correlating keys...
+2025-11-20 23:16:42,925 - INFO  - Wrote findings to findings
 ```
 
 This generates several files under `findings`, of which `private.json` is the

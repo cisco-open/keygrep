@@ -86,7 +86,7 @@ def main() -> None:
             sys.exit(1)
 
     if len(args.p) == 0 and not args.i:
-        logging.warning("No paths or state file given: nothing to process.")
+        logging.warning("No paths or state specified")
 
     try:
         for path in args.p:
@@ -107,9 +107,9 @@ def main() -> None:
         if args.i:
             try:
                 findings.write_state(args.i)
-                logging.info("Wrote state file to %s", args.i)
+                logging.info("Wrote state to %s", args.i)
             except OSError as exc:
-                logging.warning("Error writing state file %s: %s", args.i, exc)
+                logging.warning("Error writing state to %s: %s", args.i, exc)
 
 if __name__ == "__main__":
     main()

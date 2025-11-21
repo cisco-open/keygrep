@@ -4,7 +4,7 @@ import nox
 
 @nox.session
 def lint(session):
-    """Lint source files and tests."""
+    """Lint source files, tests, and the noxfile itself."""
     session.install("pylint", "nox", ".")
     session.run("pylint", "noxfile.py")
     session.run("pylint", *session.posargs, "src")
@@ -12,7 +12,7 @@ def lint(session):
 
 @nox.session
 def trailing_whitespace(session):
-    """Check for trailing whitespace in tracked files."""
+    """Check for trailing whitespace in tracked files (except for test data)."""
     files = session.run("git", "ls-files", ":(exclude)tests/test-keys",
                         silent=True, external=True).strip().splitlines()
 
@@ -35,7 +35,7 @@ def mypy(session):
 
 @nox.session
 def tests(session):
-    """Run the unit tests."""
+    """Run unit tests."""
     session.install("pytest")
     session.install(".")
     session.run("pytest", "-s", *session.posargs, "tests")
