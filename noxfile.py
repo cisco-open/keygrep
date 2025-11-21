@@ -4,7 +4,7 @@ import nox
 
 @nox.session
 def lint(session):
-    """Lint source files and tests."""
+    """Lint source files, tests, and the noxfile itself."""
     session.install("pylint", "nox", ".")
     session.run("pylint", "noxfile.py")
     session.run("pylint", *session.posargs, "src")
@@ -12,16 +12,20 @@ def lint(session):
 
 @nox.session
 def trailing_whitespace(session):
-    """Check for trailing whitespace in tracked files."""
-    result = session.run("git", "ls-files", silent=True, external=True)
-    files = result.strip().splitlines()
+    """Check for trailing whitespace in tracked files (except for test data)."""
+    files = session.run("git", "ls-files", ":(exclude)tests/test-keys",
+                        silent=True, external=True).strip().splitlines()
 
-    result = session.run(
-        "grep", "-nE", r"\s$", *files, success_codes=[1], silent=True, external=True
-    )
+    session.run("grep", "-nE", r"\s$", *files, success_codes=[1], silent=True,
+                external=True)
+@nox.session
+def hard_tabs(session):
+    """Check for hard tabs in tracked files (except for test data)."""
+    files = session.run("git", "ls-files", ":(exclude)tests/test-keys",
+                        silent=True, external=True).strip().splitlines()
 
-    if result:
-        session.error("Trailing whitespace found:\n" + result)
+    session.run("grep", "-n", "\t", *files, success_codes=[1], silent=True,
+                external=True)
 
 @nox.session
 def mypy(session):
@@ -31,7 +35,7 @@ def mypy(session):
 
 @nox.session
 def tests(session):
-    """Run the unit tests."""
+    """Run unit tests."""
     session.install("pytest")
     session.install(".")
     session.run("pytest", "-s", *session.posargs, "tests")

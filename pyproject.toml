@@ -4,10 +4,11 @@ build-backend = "hatchling.build"
 
 [project]
 name = "keygrep"
-version = "0.0.4"
+version = "0.0.5"
 description = "Red team ssh key discovery utility"
 readme = "README.md"
 requires-python = ">=3.9"
+license = "Apache-2.0"
 license-files = ["LICENSE"]
 authors = [
     { name = "Adam Reiser", email = "reiser@defensivecomputing.io" }

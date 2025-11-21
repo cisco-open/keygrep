@@ -35,10 +35,10 @@ def main() -> None:
                         help="""Include unrecovered "mangled" keys in results.
                         Without this option, keygrep will log and ignore
                         potentially recoverable public and private keys that it
-                        discovers.  Sometimes these are redacted or malformed
-                        example keys (such as in docs), but they might be
-                        recoverable by hand. Including this option may result
-                        in invalid key files.""")
+                        discovers. Sometimes these are redacted or malformed
+                        example keys, but they might be recoverable by hand.
+                        Including this option may result in invalid key
+                        files.""")
 
     # Possible options to consider adding:
     # --only_encrypted (for cracking)
@@ -75,8 +75,18 @@ def main() -> None:
     if args.i:
         try:
             findings.read_state(args.i)
-        except (json.decoder.JSONDecodeError, OSError, KeyError, UnicodeDecodeError, PermissionError):
+            logging.info("Read state from %s", args.i)
+        except FileNotFoundError:
+            logging.info("No existing state found at %s", args.i)
+        except (json.decoder.JSONDecodeError, KeyError, UnicodeDecodeError, IsADirectoryError, TypeError) as exc:
+            logging.error("%s is not a state file: %s", args.i, exc)
             sys.exit(1)
+        except PermissionError as exc:
+            logging.error("Unable to read state from %s: %s", args.i, exc)
+            sys.exit(1)
+
+    if len(args.p) == 0 and not args.i:
+        logging.warning("No paths or state specified")
 
     try:
         for path in args.p:
@@ -89,17 +99,17 @@ def main() -> None:
     # If interrupted/exception, write whatever we have
     finally:
         logging.info("Correlating keys...")
-
         findings.correlate_keys()
-        logging.info("Writing findings to %s", args.out_dir)
         findings.write_summary()
         findings.write_private_keys()
         findings.write_public_keys()
+        logging.info("Wrote findings to %s", args.out_dir)
         if args.i:
             try:
                 findings.write_state(args.i)
-            except IOError:
-                sys.exit(1)
+                logging.info("Wrote state to %s", args.i)
+            except OSError as exc:
+                logging.warning("Error writing state to %s: %s", args.i, exc)
 
 if __name__ == "__main__":
     main()
