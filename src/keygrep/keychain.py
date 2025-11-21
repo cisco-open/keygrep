@@ -25,7 +25,6 @@ import logging
 import textwrap
 import tempfile
 from pathlib import Path
-from typing import List, Pattern
 from .keygrep_utility import walk, NumericOpen, get_pubkey_data, get_privkey_data, remove_path_prefix
 from .types import StrPath, PublicKeyRecord, PrivateKeyRecord
 
@@ -35,8 +34,8 @@ __all__ = ["KeyChain"]
 class KeyChain:
     """Class containing all discovered keys and derived information."""
     def __init__(self, output_dir: StrPath = "", path_prefix: StrPath = "", include_mangled: bool = False) -> None:
-        self.private_keys: List[PrivateKeyRecord] = []
-        self.public_keys: List[PublicKeyRecord] = []
+        self.private_keys: list[PrivateKeyRecord] = []
+        self.public_keys: list[PublicKeyRecord] = []
 
         self.output_dir: Path = Path(output_dir).expanduser()
 
@@ -46,7 +45,7 @@ class KeyChain:
         self.path_prefix = Path(path_prefix).expanduser()
 
         # This is sufficient to cover 16384 bit RSA keys
-        self.private_key_pattern: Pattern[bytes] = re.compile(
+        self.private_key_pattern: re.Pattern[bytes] = re.compile(
             rb"-{5}BEGIN(.{1,12})PRIVATE KEY-{5}"
             rb"((?:(?!-{5}BEGIN).){,32768}?)"
             rb"-{5}END\1PRIVATE KEY-{5}",
@@ -60,7 +59,7 @@ class KeyChain:
         # comment. The 68 character minimum length is the shortest length
         # likely to correspond to a valid key, which is an ed25519 public key.
         # Upper of limit of 3000 should be sufficient for up to 16384 bit keys
-        self.public_key_pattern: Pattern[bytes] = re.compile(
+        self.public_key_pattern: re.Pattern[bytes] = re.compile(
             rb"(sk\-)?"
             rb"(ssh|ecdsa)-[a-z0-9\.@\-]{0,80}"
             rb"\s+[a-zA-Z0-9+=/]{68,3000}"
@@ -240,7 +239,7 @@ class KeyChain:
         # We make the assumption that even for mangled keys, these will end with either a (possibly escaped) newline or
         # other, non-escaped, whitespace.
         inner_key = inner_key.replace("\\n", "\n").replace("\\\n", "\n")
-        headers: List[str] = list(filter(None, re.findall(r"\s*([a-zA-Z0-9,\-]+: [\S]+)", inner_key, flags=re.M)))
+        headers: list[str] = list(filter(None, re.findall(r"\s*([a-zA-Z0-9,\-]+: [\S]+)", inner_key, flags=re.M)))
         inner_key = re.sub(r"[a-zA-Z0-9,\-]+: \S+", "", inner_key, flags=re.M).strip()
 
         # Special logic for viminfo
