@@ -21,8 +21,8 @@ positional arguments:
 options:
   -h, --help         show this help message and exit
   --include_mangled  Include unrecovered "mangled" keys in results. Without this option, keygrep will log and ignore potentially recoverable public
-                     and private keys that it discovers. Sometimes these are redacted or malformed example keys that might be recoverable by hand.
-                     Including this option may result in invalid key files.
+                     and private keys that it discovers. Sometimes these are redacted or malformed example keys, but they might be recoverable by
+                     hand. Including this option may result in invalid key files.
   -p path            Add this to the list of paths to search for keys. May be used multiple times.
   -i state_file      Load public and private keys from this JSON state file if it exists and write to it on close.
   -s string          Strip this leading string from the reported key location paths (e.g., if you're searching /tmp/inventory, you might set this to

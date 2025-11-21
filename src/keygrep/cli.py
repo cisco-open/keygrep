@@ -35,8 +35,8 @@ def main() -> None:
                         help="""Include unrecovered "mangled" keys in results.
                         Without this option, keygrep will log and ignore
                         potentially recoverable public and private keys that it
-                        discovers.  Sometimes these are redacted or malformed
-                        example keys that might be recoverable by hand.
+                        discovers. Sometimes these are redacted or malformed
+                        example keys, but they might be recoverable by hand.
                         Including this option may result in invalid key
                         files.""")
 
