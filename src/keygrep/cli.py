@@ -85,6 +85,9 @@ def main() -> None:
             logging.error("Unable to read state from %s: %s", args.i, exc)
             sys.exit(1)
 
+    if len(args.p) == 0 and not args.i:
+        logging.warning("No paths or state file given: nothing to process.")
+
     try:
         for path in args.p:
             if Path(path).exists():
